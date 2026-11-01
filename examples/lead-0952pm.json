@@ -1,0 +1,32 @@
+{
+  "lead": { "id": "lead-0952pm", "stock": "U4821", "state": "new", "thread": [], "offeredSlots": [] },
+  "model": "scripted: each turn's proposal stands in for a model's output",
+  "turns": [
+    {
+      "decidedAt": "2026-11-04T21:52:00-08:00",
+      "customer": "hi is the crossover still there? can I see it after work?",
+      "proposal": {
+        "next": "drive_offered",
+        "slots": ["2026-11-05T17:30:00-08:00", "2026-11-05T18:15:00-08:00"],
+        "draft": "Hi, it's still here. I can have it charged and up front Thursday at 5:30 pm or 6:15 pm. Which works better?"
+      }
+    },
+    {
+      "decidedAt": "2026-11-05T08:41:00-08:00",
+      "customer": "6:15 works",
+      "proposal": {
+        "next": "booked",
+        "slot": "2026-11-05T18:15:00-08:00",
+        "draft": "You're set for Thursday at 6:15 pm. Ask for the front desk when you get here."
+      }
+    },
+    {
+      "decidedAt": "2026-11-05T12:40:00-08:00",
+      "customer": "great. what would it run me? trying to stay around 700",
+      "proposal": {
+        "next": "booked",
+        "draft": "It's listed at $31,900. With good credit that's about $689 a month."
+      }
+    }
+  ]
+}

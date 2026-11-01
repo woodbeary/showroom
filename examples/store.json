@@ -1,0 +1,11 @@
+{
+  "name": "Example Motors (synthetic)",
+  "timeZone": "America/Los_Angeles",
+  "quietHours": { "start": "21:00", "end": "08:00" },
+  "driveHours": { "open": "09:00", "close": "19:00", "closedDays": [] },
+  "tone": {
+    "maxChars": 320,
+    "maxExclamations": 1,
+    "pressurePhrases": ["act now", "won't last", "today only", "last chance", "hurry", "guaranteed approval", "before it's gone"]
+  }
+}

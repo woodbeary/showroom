@@ -1,0 +1,8 @@
+[
+  { "stock": "U4821", "title": "2023 electric crossover, long range", "miles": 21400, "price": 31900, "status": "available" },
+  { "stock": "U5107", "title": "2022 electric pickup, dual motor", "miles": 33850, "price": 41500, "status": "available" },
+  { "stock": "U4410", "title": "2022 electric sedan", "miles": 40200, "price": 24900, "status": "available" },
+  { "stock": "U5302", "title": "2023 electric SUV, three-row", "miles": 18600, "price": 47800, "status": "available" },
+  { "stock": "U5220", "title": "2024 plug-in hybrid SUV", "miles": 9800, "price": 36250, "status": "on_hold" },
+  { "stock": "U3990", "title": "2021 electric hatchback", "miles": 28100, "price": 18700, "status": "sold" }
+]

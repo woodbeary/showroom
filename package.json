@@ -1,0 +1,26 @@
+{
+  "name": "showroom",
+  "version": "0.1.0",
+  "description": "Run a sales agent like a product: a typed journey state machine, pre-send checks that can only hold, transcript backtests labeled by what happened next, and holdouts read from the sales record.",
+  "license": "MIT",
+  "author": "Jacob Lopez",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "showroom": "src/cli.ts"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "showroom": "node src/cli.ts",
+    "synth": "node scripts/synth.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  },
+  "packageManager": "pnpm@10.28.0"
+}
