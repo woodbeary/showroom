@@ -25,7 +25,7 @@ test("showroom run prints the README's demo", () => {
 test("showroom backtest exits 0 with every fixture passing and writes the gate files", () => {
   const out = showroom("backtest", "examples/transcripts", "--gate", join(dir, "gate"));
   assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, /Regression fixtures: 11 of 11 pass\./);
+  assert.match(out.stdout, /Regression fixtures: 24 of 24 pass\./);
   assert.match(out.stdout, /label \\ agent/);
   const labels = readFileSync(join(dir, "gate", "labels.jsonl"), "utf8").trim().split("\n");
   assert.ok(labels.every((l) => JSON.parse(l).decision.decidedBy === "human"));

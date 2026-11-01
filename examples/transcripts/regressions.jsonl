@@ -9,3 +9,16 @@
 {"id":"cancel-is-not-stop","text":"Cancel my Thursday drive, something came up","origin":"synthetic: a booking change must not read as STOP","expect":{"notKind":"stop","asks":true}}
 {"id":"in-a-month-is-not-finance","text":"I'll be ready in a month or so","origin":"synthetic: 'a month' alone is timing, not a payment","expect":{"kind":"not_yet","action":"reply"}}
 {"id":"stop","text":"STOP","origin":"synthetic: carrier keyword","expect":{"kind":"stop","action":"opt_out"}}
+{"id":"revoke","text":"revoke","origin":"2026-11-01 probe: an opt-out word 47 CFR 64.1200(a)(10) names read as an ordinary message","expect":{"kind":"stop","action":"opt_out"}}
+{"id":"opt-out","text":"opt out","origin":"2026-11-01 probe: an opt-out word 47 CFR 64.1200(a)(10) names read as an ordinary message","expect":{"kind":"stop","action":"opt_out"}}
+{"id":"optout","text":"OPTOUT","origin":"2026-11-01 probe: a default carrier opt-out keyword read as an ordinary message","expect":{"kind":"stop","action":"opt_out"}}
+{"id":"please-stop","text":"please stop","origin":"2026-11-01 probe: STOP with a courtesy word read as an ordinary message","expect":{"kind":"stop","action":"opt_out"}}
+{"id":"stop-pls","text":"stop pls","origin":"2026-11-01 probe: STOP with a courtesy word read as an ordinary message","expect":{"kind":"stop","action":"opt_out"}}
+{"id":"unsubscribe-me","text":"unsubscribe me","origin":"2026-11-01 probe: an unsubscribe in a sentence read as an ordinary message","expect":{"kind":"stop","action":"opt_out"}}
+{"id":"no-more-texts","text":"no more texts","origin":"2026-11-01 probe: a possible opt-out read as an ordinary message","expect":{"kind":"possible_stop","action":"handoff"}}
+{"id":"wrong-number","text":"wrong number","origin":"2026-11-01 probe: a possible opt-out read as an ordinary message","expect":{"kind":"possible_stop","action":"handoff"}}
+{"id":"stop-it","text":"Stop it","origin":"2026-11-01 probe: a possible opt-out read as an ordinary message","expect":{"kind":"possible_stop","action":"handoff"}}
+{"id":"please-remove-me","text":"please remove me","origin":"2026-11-01 probe: a possible opt-out read as an ordinary message","expect":{"kind":"possible_stop","action":"handoff"}}
+{"id":"lose-my-number","text":"lose my number","origin":"2026-11-01 probe: a possible opt-out read as an ordinary message","expect":{"kind":"possible_stop","action":"handoff"}}
+{"id":"stop-the-texts","text":"stop the texts","origin":"2026-11-01 probe: a possible opt-out read as an ordinary message","expect":{"kind":"possible_stop","action":"handoff"}}
+{"id":"dont-lose-my-number","text":"Don't lose my number, I'll call you next week","origin":"2026-11-01 probe: keeping in touch is not an opt-out","expect":{"notKind":"possible_stop"}}

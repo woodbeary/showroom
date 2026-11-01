@@ -48,6 +48,10 @@ export const POSSIBLE_STOP: readonly RegExp[] = [
   /\bstop\s+(?:sending|texting|messaging|contacting)\b/i,
   /\bno\s+more\s+(?:texts?|txts?|messages?|msgs?)\b/i,
   /\bwrong\s+(?:number|person|#)/i,
+  /\bstop\s+(?:the|these|those|your|all\s+the)\s+(?:texts?|txts?|messages?|msgs?)\b/i,
+  /\bremove\s+me\b/i,
+  /(?<!\b(?:don['’]?t|do not|dont|never)\s+)\b(?:lose|delete|forget)\s+(?:my|this)\s+(?:number|#|contact|info)\b/i,
+  /^\s*stop\s+it\b/i,
   /^\s*stop\s*[.!,]/i,
   /\bstop\s*[.!]*\s*$/i,
 ];

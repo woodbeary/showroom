@@ -8,6 +8,7 @@ import { EX } from "./helpers.ts";
 interface Fixture {
   id: string;
   text: string;
+  origin: string;
   expect: { kind?: Kind; notKind?: Kind; asks?: boolean };
 }
 
@@ -36,6 +37,22 @@ test("the 'have your number' fixture catches the rule it was written for", () =>
   assert.equal(readInbound(f.text, before).kind, "not_yet");
   assert.equal(meets(f, before), false);
   assert.equal(meets(f, RULES), true);
+});
+
+const V010_STOP: readonly RegExp[] = [
+  /^\s*(?:stop|stop all|stopall|unsubscribe|end|quit|cancel)\s*[.!]*\s*$/i,
+  /\b(?:do not|don['’]?t|dont|stop)\s+(?:text|texting|message|messaging|contact|contacting)\s+me\b/i,
+  /\b(?:leave me alone|remove me from|take me off)\b/i,
+];
+
+test("each opt-out fixture from the Nov 1 probe fails under v0.1.0's rules and holds under today's", () => {
+  const before: Rules = { ...RULES, stop: V010_STOP, possibleStop: [] };
+  const probe = fixtures.filter((f) => f.origin.startsWith("2026-11-01") && (f.expect.kind === "stop" || f.expect.kind === "possible_stop"));
+  assert.equal(probe.length, 12);
+  for (const f of probe) {
+    assert.equal(meets(f, before), false, `${f.id} already read right under v0.1.0`);
+    assert.equal(meets(f, RULES), true, `${f.id}: ${JSON.stringify(readInbound(f.text))}`);
+  }
 });
 
 test("an ask beats a decline word in the same message", () => {
@@ -89,7 +106,7 @@ test("a possible opt-out goes to a person, and ordinary uses of 'stop' do not", 
     assert.equal(r.kind, "possible_stop", t);
     assert.equal(r.desk, "salesperson", t);
   }
-  for (const t of ["can I stop by tomorrow?", "don't stop, this is great", "can it stop at a charger on the way?", "Cancel my Thursday drive, something came up"]) {
+  for (const t of ["can I stop by tomorrow?", "don't stop, this is great", "can it stop at a charger on the way?", "Cancel my Thursday drive, something came up", "never lose my number, I'll be back", "can you remove the roof rack?"]) {
     const kind = readInbound(t).kind;
     assert.ok(kind !== "stop" && kind !== "possible_stop", `${t}: ${kind}`);
   }
