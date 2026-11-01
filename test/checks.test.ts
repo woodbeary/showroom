@@ -53,19 +53,31 @@ test("dealer shorthand and spelled-out figures must still be ones inventory retu
   assert.deepEqual(names("It's listed at 31,900, or 31.9k if you like."), []);
 });
 
+test("a number is a year only when inventory returned that model year, and a letter after it is not a unit", () => {
+  for (const d of ["We can do it for 2000 less.", "Add 1995 and it's yours.", "We can do 30ish on it.", "It's yours for 29900usd", "I can do 30g on it.", "two nine nine and it's yours"]) {
+    assert.deepEqual(names(d), ["price_from_inventory"], d);
+  }
+  assert.deepEqual(names("It's a 2023."), []);
+  assert.deepEqual(names("It's a 2023.", ctx({ facts: [] })), ["price_from_inventory"]);
+  assert.deepEqual(names("It's the 2nd of two we have, with an 800V system."), []);
+});
+
 test("numbers that are not money pass: times, years, counts and measured units", () => {
   for (const d of [
     "It's here and ready to drive. I can have it up front Thursday at 5:30 pm or 6:15 pm. Which works better?",
     "It's a 2023 with 21,400 miles, seats 5, and charges at 11.5 kW.",
     "Range is about 300 miles on a full charge, and it has two keys and one owner.",
     "Thursday 11/5 at 5:30 pm works. Twenty minutes is plenty for the drive.",
+    "Feel free to stop by Thursday at 5:30 pm. It's one of two we have, and the other is on hold for another buyer.",
   ]) {
     assert.deepEqual(names(d), [], d);
   }
 });
 
 test("promises, concessions and price talk the model starts are held for the sales manager", () => {
-  for (const d of ["I promise it's yours at $31,900.", "We'll throw in free charging.", "We'll waive the doc fee.", "$31,900 is my final price.", "I'll get you a better number.", "We can meet you in the middle.", "I can hold it for you until Thursday.", "Let me see what I can do on price."]) {
+  for (const d of ["I promise it's yours at $31,900.", "We'll throw in free charging.", "We'll waive the doc fee.", "$31,900 is my final price.", "I'll get you a better number.", "We can meet you in the middle.", "I can hold it for you until Thursday.", "Let me see what I can do on price.",
+    "I'll put it on hold for you.", "I can reserve the crossover for you.", "I'll throw a charger in.", "Let's split the difference.", "We can meet you halfway.",
+    "I'll work with you on the price.", "No doc fee for you.", "We'll include a home charger at no cost.", "We'll pay your registration."]) {
     const holds = runChecks(d, ctx());
     assert.ok(holds.some((h) => h.check === "no_deal_terms" && h.desk === "sales_manager"), d);
   }

@@ -33,9 +33,9 @@ const NUMBER = /(?<![\w.,:/$])(\$\s?)?(\d[\d,]*)(\.\d+)?/g;
 const MONEY_UNIT = /^\s*(k|grand|dollars?|bucks)\b/i;
 
 const NOT_MONEY_AFTER =
-  /^(?:\s*(?:a\.?m\.?|p\.?m\.?)(?![a-z])|:\d|\/\d|[a-z]|[\s-]*(?:%|°|(?:miles?|mi|mph|mpg|mpge|kw|kwh|kilowatt\w*|minutes?|mins?|hours?|hrs?|days?|weeks?|seconds?|secs?|seats?|seaters?|doors?|rows?|inch(?:es)?|ft|feet|foot|lbs?|pounds|volts?|amps?|hp|horsepower|cubic|percent|degrees?|owners?|keys?|cylinders?|passengers?|people|stars?)\b))/i;
+  /^(?:\s*(?:a\.?m\.?|p\.?m\.?)(?![a-z])|:\d|\/\d|(?:st|nd|rd|th)\b|[\s-]*(?:%|°|(?:miles?|mi|mph|mpg|mpge|kw|kwh|kilowatt\w*|minutes?|mins?|hours?|hrs?|days?|weeks?|seconds?|secs?|seats?|seaters?|doors?|rows?|inch(?:es)?|ft|feet|foot|lbs?|pounds|v|volts?|amps?|hp|horsepower|cubic|percent|degrees?|owners?|keys?|cylinders?|passengers?|people|stars?)\b))/i;
 
-const YEAR = /^(?:19|20)\d{2}$/;
+const YEAR = /\b(?:19|20)\d{2}\b/g;
 
 const COUNT_BELOW = 13;
 
@@ -46,8 +46,10 @@ const SPELLED = new RegExp(`\\b(?:an?\\s+)?(?:${NUMBER_WORD})(?:(?:[\\s-]+(?:and
 
 const SPELLED_LARGE = /\b(?:thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|grand)\b/i;
 
+const SPELLED_RUN = new RegExp(`\\b(?:${NUMBER_WORD})[\\s-]+(?:${NUMBER_WORD})\\b`, "i");
+
 const DEAL_TERMS =
-  /\b(?:discount\w*|rebates?|incentives?|negotiab\w*|deals?|out[\s-]the[\s-]door|otd|guarantee\w*|promis\w*|best price|lowest price|final (?:price|offer|number)|better (?:number|price|deal|offer)|price (?:drop|cut|match)\w*|(?:below|under) (?:list|sticker|asking|msrp)|knock\w*|shave\w*|wiggle room|throw(?:ing|n)?\s+in|threw\s+in|waiv\w*|meet you (?:at|in the middle)|hold it for you|(?:do|work) (?:something )?on (?:the )?price)\b|(?:\d|\b(?:grand|hundred|thousand|bucks|dollars))\s*k?\s+off\b/gi;
+  /\b(?:discount\w*|rebates?|incentives?|negotiab\w*|deals?|out[\s-]the[\s-]door|otd|guarantee\w*|promis\w*|best price|lowest price|final (?:price|offer|number)|better (?:number|price|deal|offer)|price (?:drop|cut|match)\w*|(?:below|under) (?:list|sticker|asking|msrp)|knock\w*|shave\w*|wiggle room|thr(?:ow(?:ing|n|s)?|ew)\s+(?:[\w'’]+\s+){0,3}?in|waiv\w*|meet you (?:at|in the middle)|meet (?:you )?half[\s-]?way|split the difference|(?:hold|holding|reserve|reserving|save|saving|set aside|setting aside)\s+(?:it|this|that|one|(?:the|this|that|your)\s+\w+)\s+(?:for\s+(?:you|u|ya)|until|till|til|through|thru)|(?:put|putting)\s+(?:it|this|that|(?:the|this|that|your)\s+\w+)\s+on\s+hold|on\s+hold\s+for\s+(?:you|u|ya)|(?:do|work)\s+(?:something\s+|with\s+you\s+)?on\s+(?:the\s+)?price|(?:no|zero)\s+(?:doc(?:ument)?\s+|dealer\s+|admin\s+|processing\s+)?fees?|at no (?:extra |additional )?(?:cost|charge)|free of charge|on the house|complimentary|free\s+(?:home\s+)?(?:charging|charger|floor\s+mats|mats|maintenance|service|tint|warranty|accessor\w+|delivery|shipping|upgrades?)|(?:cover|pay|pick\s+up)\s+(?:the|your)\s+(?:registration|taxes|tax|title|fees?|doc\s+fee|shipping|delivery))\b|(?:\d|\b(?:grand|hundred|thousand|bucks|dollars))\s*k?\s+off\b/gi;
 
 const CLOCK = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\bnoon\b/gi;
 
@@ -60,7 +62,11 @@ interface Amount {
   values: number[];
 }
 
-function amounts(draft: string): Amount[] {
+function modelYears(facts: readonly Vehicle[]): Set<string> {
+  return new Set(facts.flatMap((v) => v.title.match(YEAR) ?? []));
+}
+
+function amounts(draft: string, years: ReadonlySet<string>): Amount[] {
   const out: Amount[] = [];
   for (const m of draft.matchAll(NUMBER)) {
     const digits = (m[2] ?? "").replace(/,+$/, "");
@@ -79,12 +85,12 @@ function amounts(draft: string): Amount[] {
       continue;
     }
     if (NOT_MONEY_AFTER.test(rest)) continue;
-    if (!decimal && (YEAR.test(digits) || face < COUNT_BELOW)) continue;
+    if (!decimal && (years.has(digits) || face < COUNT_BELOW)) continue;
     out.push({ text: m[0], values: face < 1000 ? [face, Math.round(face * 1000)] : [Math.round(face)] });
   }
   for (const m of draft.matchAll(SPELLED)) {
     const rest = draft.slice((m.index ?? 0) + m[0].length);
-    if (SPELLED_LARGE.test(m[0]) && !NOT_MONEY_AFTER.test(rest)) out.push({ text: m[0], values: [] });
+    if ((SPELLED_LARGE.test(m[0]) || SPELLED_RUN.test(m[0])) && !NOT_MONEY_AFTER.test(rest)) out.push({ text: m[0], values: [] });
   }
   return out;
 }
@@ -116,7 +122,7 @@ export const CHECKS: readonly Check[] = [
     desk: "sales_manager",
     run: (draft, ctx) => {
       const known = new Set(ctx.facts.map((v) => v.price));
-      const bad = amounts(draft).filter((a) => !a.values.some((v) => known.has(v)));
+      const bad = amounts(draft, modelYears(ctx.facts)).filter((a) => !a.values.some((v) => known.has(v)));
       if (bad.length === 0) return null;
       const listed = ctx.facts.map((v) => `${v.stock} $${v.price.toLocaleString("en-US")}`).join(", ") || "nothing";
       return `${bad.map((a) => a.text).join(", ")} not a price the inventory returned (it returned ${listed})`;

@@ -11,10 +11,10 @@ can't write.
    time was one we offered).
 2. **Pre-send checks that can only hold.** A draft is held if it has a number nobody vouched for
    (a price inventory didn't return, in digits, in shorthand like "29.9" or in words), a
-   discount, a promise or an out-the-door figure, payments, APR, credit or approval, a request
-   for an SSN or a date of birth, a time nobody offered, "tomorrow" when it won't go out today, or
-   a break in tone. A check returns a reason, never new text. A held draft becomes a handoff to
-   the desk that owns it, never silence.
+   discount, a promise, a concession or an out-the-door figure, payments, APR, credit or
+   approval, a request for an SSN or a date of birth, a time nobody offered, "tomorrow" when it
+   won't go out today, or a break in tone. A check returns a reason, never new text. A held
+   draft becomes a handoff to the desk that owns it, never silence.
 3. **Transcript backtests labeled by what happened next.** Each customer message in a past
    thread is graded against what the store actually did next (a routine reply, a person or a
    desk, nothing, an opt-out), not against anyone's opinion of the transcript. Failures are
@@ -344,17 +344,18 @@ here.
 
 ## What was tested
 
-- `pnpm test`: 87 tests with `node:test`, passing locally on Node 22.22. They cover
+- `pnpm test`: 88 tests with `node:test`, passing locally on Node 22.22. They cover
   the legal moves and terminal states; the inbound rules against every regression fixture,
   and the pre-fix rules failing the "have your number" fixture and each opt-out fixture from
   the Nov 1 probe; every opt-out word in 47 CFR 64.1200(a)(10) and the carrier keywords
   reading as STOP, and possible opt-outs going to a person with no reply; each pre-send check
   holding and passing, including prices with no dollar sign, in dealer shorthand or in words,
-  discount, promise, out-the-door and guarantee wording, and times, years, counts and units
-  passing; routing scored by desk, with the 90 named transfers in the example; quiet hours
-  across the November DST change; the three-turn demo end to end; a money question handing
-  off before the model is called; illegal moves, silent answers and model errors becoming
-  handoffs; the `decidedAt` lint over `src/`; label derivation, including that no label ever
+  a year no listed vehicle has, discount, promise, concession, hold-the-car, out-the-door and
+  guarantee wording, and times, model years, counts and units passing; routing scored by
+  desk, with the 90 named transfers in the example; quiet hours across the November DST
+  change; the three-turn demo end to end; a money question handing off before the model is
+  called; illegal moves, silent answers and model errors becoming handoffs; the `decidedAt`
+  lint over `src/`; label derivation, including that no label ever
   comes from an agent-written step; the 200-thread backtest counts; hash assignment against
   shared vectors; the kill switch, shadow mode, quiet hours and a send that raises; a STOP, a
   possible opt-out or a handoff after a reply was queued holding that reply (a possible
@@ -394,9 +395,10 @@ a ledger (run one runner per ledger).
   computed in the store's time zone. A store that texts customers in other zones needs each
   customer's zone.
 - The price check accounts for every number in a draft, so a number it can't place is held
-  even when it isn't a price ("the 405"), and a spelled-out figure is held even when it equals
-  the listed price. That costs a handoff, never a wrong send. A figure with no digits and no
-  number word ("a few bucks") still gets through.
+  even when it isn't a price ("the 405", a year that isn't a listed vehicle's model year), and
+  a spelled-out figure is held even when it equals the listed price. That costs a handoff,
+  never a wrong send. A figure with no digits and no number word ("a few bucks") still gets
+  through.
 - The routing score covers only transfers whose transcript names the desk.
 - Rules are English-only regular expressions; a misread in another language won't be caught.
 - `routineModel` is a stand-in for the replay, not a model to ship.
