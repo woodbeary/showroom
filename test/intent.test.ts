@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { ASKS, CONTACT_REQUEST, NOT_YET, readInbound, RULES, TRIGGERS, type Kind, type Rules } from "../src/intent.ts";
+import { ASKS, CONTACT_REQUEST, NOT_YET, POSSIBLE_STOP, readInbound, RULES, STOP, TRIGGERS, type Kind, type Rules } from "../src/intent.ts";
 import { EX } from "./helpers.ts";
 
 interface Fixture {
@@ -71,13 +71,37 @@ test("STOP is honored as a whole-message keyword, not inside other requests", ()
   for (const t of ["Cancel my Thursday drive", "don't stop, this is great", "can it stop at a charger on the way?"]) assert.notEqual(readInbound(t).kind, "stop", t);
 });
 
+test("every opt-out word the FCC names in 47 CFR 64.1200(a)(10) is a STOP, plus the carrier keywords", () => {
+  for (const t of ["stop", "quit", "end", "revoke", "opt out", "cancel", "unsubscribe", "OPTOUT", "Opt-out", "STOPALL", "stop all"]) {
+    assert.equal(readInbound(t).kind, "stop", t);
+  }
+  for (const t of ["please stop", "Stop please!", "stop pls", "unsubscribe me", "opt me out", "I want to opt out", "I revoke my consent"]) {
+    assert.equal(readInbound(t).kind, "stop", t);
+  }
+  for (const t of ["opt me in", "I don't want to unsubscribe, just fewer texts", "stop texting and call me instead"]) {
+    assert.notEqual(readInbound(t).kind, "stop", t);
+  }
+});
+
+test("a possible opt-out goes to a person, and ordinary uses of 'stop' do not", () => {
+  for (const t of ["no more texts", "wrong number", "Wrong number, who is this?", "Stop. Not interested", "ok just stop", "how do I opt out of these", "stop texting and call me instead", "I don't want to unsubscribe, just fewer texts"]) {
+    const r = readInbound(t);
+    assert.equal(r.kind, "possible_stop", t);
+    assert.equal(r.desk, "salesperson", t);
+  }
+  for (const t of ["can I stop by tomorrow?", "don't stop, this is great", "can it stop at a charger on the way?", "Cancel my Thursday drive, something came up"]) {
+    const kind = readInbound(t).kind;
+    assert.ok(kind !== "stop" && kind !== "possible_stop", `${t}: ${kind}`);
+  }
+});
+
 test("timing words alone are not payment talk", () => {
   assert.equal(readInbound("I'll be ready in a month or so").desk, null);
   assert.equal(readInbound("$650 a month is my max").desk, "finance");
 });
 
-test("ask patterns are case-insensitive and stateless", () => {
-  for (const p of [...ASKS, ...NOT_YET]) {
+test("ask and opt-out patterns are case-insensitive and stateless", () => {
+  for (const p of [...ASKS, ...NOT_YET, ...STOP, ...POSSIBLE_STOP]) {
     assert.ok(p.flags.includes("i"), String(p));
     assert.equal(p.flags.includes("g"), false, String(p));
   }

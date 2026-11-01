@@ -73,7 +73,7 @@ async function cmdRun(file: string, opts: { store: Store; inventory: Vehicle[]; 
       printTurn(i + 1, t.customer, out.result, opts.store);
       console.log("");
     }
-    if (opts.queue && out.result.text) appendFileSync(opts.queue, `${JSON.stringify(out.result)}\n`);
+    if (opts.queue) appendFileSync(opts.queue, `${JSON.stringify(out.result)}\n`);
   }
   if (opts.json) console.log(JSON.stringify(results, null, 2));
   else console.log(`final state: ${lead.state}`);

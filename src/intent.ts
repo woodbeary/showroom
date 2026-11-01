@@ -8,7 +8,7 @@ export const DESK_NAMES: Readonly<Record<Desk, string>> = {
   salesperson: "salesperson",
 };
 
-export type Kind = "stop" | "handoff" | "ask" | "decline" | "not_yet" | "other";
+export type Kind = "stop" | "possible_stop" | "handoff" | "ask" | "decline" | "not_yet" | "other";
 
 export interface Reading {
   kind: Kind;
@@ -26,6 +26,7 @@ export interface Trigger {
 
 export interface Rules {
   stop: readonly RegExp[];
+  possibleStop: readonly RegExp[];
   triggers: readonly Trigger[];
   asks: readonly RegExp[];
   declines: readonly RegExp[];
@@ -33,9 +34,22 @@ export interface Rules {
 }
 
 export const STOP: readonly RegExp[] = [
-  /^\s*(?:stop|stop all|stopall|unsubscribe|end|quit|cancel)\s*[.!]*\s*$/i,
+  /^\s*(?:stop\s*all|end|quit|cancel)\s*[.!]*\s*$/i,
+  /^\s*(?:please\s+)?(?:stop|unsubscribe|revoke|opt[\s-]?out)(?:\s+(?:please|pls|plz|now|thanks|thank you|thx))?\s*[.!]*\s*$/i,
   /\b(?:do not|don['’]?t|dont|stop)\s+(?:text|texting|message|messaging|contact|contacting)\s+me\b/i,
   /\b(?:leave me alone|remove me from|take me off)\b/i,
+  /\b(?:unsubscribe\s+me|opt\s+me\s+out)\b/i,
+  /(?<!\b(?:don['’]?t|do not|dont|not|never)\s+)\b(?:want|wanna|would like|wish)\s+to\s+(?:opt[\s-]?out|unsubscribe)\b/i,
+  /\brevoke\s+(?:my\s+|all\s+)?consent\b/i,
+];
+
+export const POSSIBLE_STOP: readonly RegExp[] = [
+  /\b(?:unsubscribe|revoke|opt(?:ing)?[\s-]?out)\b/i,
+  /\bstop\s+(?:sending|texting|messaging|contacting)\b/i,
+  /\bno\s+more\s+(?:texts?|txts?|messages?|msgs?)\b/i,
+  /\bwrong\s+(?:number|person|#)/i,
+  /^\s*stop\s*[.!,]/i,
+  /\bstop\s*[.!]*\s*$/i,
 ];
 
 export const CONTACT_REQUEST: Trigger = {
@@ -130,13 +144,14 @@ export const NOT_YET: readonly RegExp[] = [
   /\blet\s+me\s+(?:see|check|think|talk)\b/i,
 ];
 
-export const RULES: Rules = { stop: STOP, triggers: TRIGGERS, asks: ASKS, declines: DECLINES, notYet: NOT_YET };
+export const RULES: Rules = { stop: STOP, possibleStop: POSSIBLE_STOP, triggers: TRIGGERS, asks: ASKS, declines: DECLINES, notYet: NOT_YET };
 
 const any = (patterns: readonly RegExp[], text: string) => patterns.some((p) => p.test(text));
 
 export function readInbound(text: string, rules: Rules = RULES): Reading {
   const plain = { trigger: null, desk: null };
   if (any(rules.stop, text)) return { kind: "stop", asks: false, ...plain };
+  if (any(rules.possibleStop, text)) return { kind: "possible_stop", asks: false, trigger: "possible_opt_out", desk: "salesperson" };
   const asks = any(rules.asks, text);
   for (const t of rules.triggers) {
     if (any(t.patterns, text)) {

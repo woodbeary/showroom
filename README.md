@@ -9,11 +9,12 @@ can't write.
    `closed`). The model proposes the next state; code checks the move is legal and that its
    facts hold (the vehicle is available, the drive slots are inside store hours, the booked
    time was one we offered).
-2. **Pre-send checks that can only hold.** A draft that quotes a price inventory didn't return,
-   talks payments, APR, credit or approval, asks for an SSN or a date of birth, names a time
-   nobody offered, says "tomorrow" when it won't go out today, or breaks tone, is held. A check
-   returns a reason, never new text. A held draft becomes a handoff to the desk that owns it,
-   never silence.
+2. **Pre-send checks that can only hold.** A draft that quotes a price inventory didn't return
+   (with or without a dollar sign, or in words), offers a discount, an out-the-door figure or a
+   guarantee, talks payments, APR, credit or approval, asks for an SSN or a date of birth, names
+   a time nobody offered, says "tomorrow" when it won't go out today, or breaks tone, is held. A
+   check returns a reason, never new text. A held draft becomes a handoff to the desk that owns
+   it, never silence.
 3. **Transcript backtests labeled by what happened next.** Each customer message in a past
    thread is graded against what the store actually did next (a routine reply, a person or a
    desk, nothing, an opt-out), not against anyone's opinion of the transcript. Failures are
@@ -22,7 +23,8 @@ can't write.
    primary metric is written down and hashed before launch, and the readout reads sales only
    from the dealer's sales record. Point it at the agent's own booking log and it refuses.
 5. **A send path for shadow and live.** A kill switch re-read every cycle, sends held in quiet
-   hours, and a write-ahead ledger: a send whose answer was lost is looked up, never resent.
+   hours, a STOP or a handoff that arrives after a reply was queued holds that reply, and a
+   write-ahead ledger: a send whose answer was lost is looked up, never resent.
 
 TypeScript on Node 22.18+ (run directly, no build step), with a standard-library Python
 readout for the holdout. MIT. Everything here runs on synthetic data and a scripted or
@@ -38,7 +40,7 @@ results come in.
 ```mermaid
 flowchart LR
   IN["customer message<br/>+ decidedAt"] --> READ{"code reads it"}
-  READ -- "STOP" --> OPT["opted_out<br/>no reply"]
+  READ -- "STOP and the<br/>FCC opt-out words" --> OPT["opted_out<br/>no reply"]
   READ -- "money, trade-in, price,<br/>complaint, 'call me'" --> HAND["handoff to a desk<br/>+ one locked line"]
   READ -- "anything else" --> MODEL["model proposes<br/>next state + draft"]
   MODEL --> LEGAL{"legal move?<br/>vehicle, slots"}
@@ -51,7 +53,8 @@ flowchart LR
 ```
 
 A question the model answers with silence is also a handoff. A message on a lead a person
-already owns goes to that person.
+already owns goes to that person. A message that may be an opt-out without saying so plainly
+("wrong number", "no more texts") goes to a person with no reply at all.
 
 ## Two-minute demo
 
@@ -209,6 +212,14 @@ row still in `sending` is settled by looking its request ID up at the sender, ne
 sending again. With `after_write` the lookup finds the receipt and it ends `sent`, still
 exactly once. Without `--live` the same command only logs (`shadowed`).
 
+`run --queue` writes every turn, including the ones that send nothing, and each cycle re-reads
+each lead's latest turn before anything goes out. If the customer texts STOP at 10:30 pm,
+after the 9:52 pm reply was queued for 8:00, the 8:00 cycle holds the reply
+(`stop_honored: the customer opted out; nothing may be sent`) and the provider gets nothing.
+If a person took the lead after a reply was queued, the reply is held for that person and the
+handoff line still goes. A reply that says "today" or "tomorrow" is checked again at the
+moment it would actually go out, and held if that is a later day than it was decided.
+
 ## Why I built this
 
 I sold Harley-Davidsons on an Orange County dealer floor, then worked 2019 to 2021 as a loan
@@ -229,10 +240,11 @@ Showroom is what I'd want on day one of running a sales agent: the journey as a 
 machine, code that owns every number and commitment, replays graded by what happened next,
 and a holdout read from the sales record. Its first rules are the ones from my own lead
 system, generalized and reworded for a dealership: STOP honored, money questions, complaints
-and refunds sent to a person, an ask never closed by a decline word, and a blocked send turned
-into an alert instead of silence. No customer data is in this repository. On my own agent
-I've run owner-label replays and shadow mode; I have never run a randomized holdout, so the
-holdout here shows the method on synthetic data and claims no lift.
+and refunds sent to a person, an ask never closed by a decline word, and a blocked template
+turned into an alert instead of silence. At home that last rule covered the service and quote
+templates; here every held draft becomes a handoff. No customer data is in this repository.
+On my own agent I've run owner-label replays and shadow mode; I have never run a randomized
+holdout, so the holdout here shows the method on synthetic data and claims no lift.
 
 — Jacob Lopez
 
@@ -278,17 +290,21 @@ here.
 
 ## What was tested
 
-- `pnpm test`: 55 tests with `node:test`, passing locally on Node 22.22. They cover the legal
-  moves and terminal states; the inbound rules against every regression fixture, and the
-  pre-fix rules failing the "have your number" fixture; each pre-send check holding and
-  passing; quiet hours across the November DST change; the three-turn demo end to end; a
-  money question handing off before the model is called; illegal moves, silent answers and
-  model errors becoming handoffs; the `decidedAt` lint over `src/`; label derivation,
-  including that no label ever comes from an agent-written step; the 200-thread backtest
-  counts; hash assignment against shared vectors; the kill switch, shadow mode, quiet hours
-  and a send that raises; and a real child process that dies with exit code 137 inside
-  `send()`, before and after the provider write, then restarted twice, with exactly the
-  expected number of deliveries.
+- `pnpm test`: 66 tests with `node:test`, passing locally on Node 22.22 and 24.15. They cover
+  the legal moves and terminal states; the inbound rules against every regression fixture,
+  and the pre-fix rules failing the "have your number" fixture; every opt-out word in 47 CFR
+  64.1200(a)(10) and the carrier keywords reading as STOP, and possible opt-outs going to a
+  person with no reply; each pre-send check holding and passing, including prices with no
+  dollar sign or in words, and discount, out-the-door and guarantee wording; quiet hours
+  across the November DST change; the three-turn demo end to end; a money question handing
+  off before the model is called; illegal moves, silent answers and model errors becoming
+  handoffs; the `decidedAt` lint over `src/`; label derivation, including that no label ever
+  comes from an agent-written step; the 200-thread backtest counts; hash assignment against
+  shared vectors; the kill switch, shadow mode, quiet hours and a send that raises; a STOP or
+  a handoff after a reply was queued holding that reply, and "today" re-checked at the
+  actual send time; and a real child process that dies with exit code 137 inside `send()`,
+  before and after the provider write, then restarted twice, with exactly the expected
+  number of deliveries.
 - `pnpm typecheck`: `tsc --strict` with `noUncheckedIndexedAccess` and
   `exactOptionalPropertyTypes`, clean.
 - `python3 -m unittest discover -s analysis`: 11 tests, passing locally on Python 3.11, 3.12
@@ -300,8 +316,8 @@ here.
   `autonomy-gate check --shadow .out/gate/shadow.jsonl --labels .out/gate/labels.jsonl` is
   RED on p95 decision time only, as above.
 - CI runs the TypeScript suite on Node 22 and 24, the Python suite on 3.11 to 3.13, the
-  README's demo commands, and checks that `pnpm synth` regenerates the examples byte for
-  byte.
+  README's demo commands, and checks that `pnpm synth` regenerates the synthetic threads and
+  experiment byte for byte.
 
 Not tested: a real model, a real messaging provider, a real dealer's sales record, or more
 than one runner sharing a ledger (run one runner per ledger).
@@ -312,7 +328,11 @@ than one runner sharing a ledger (run one runner per ledger).
   construction. Only the planted phrasings test anything, and only the ones I thought of.
 - The readout's assignment is per lead ID. If one shopper can arrive as two leads (a text and
   a web form), dedupe to a person ID first, or the same person can land in both arms.
-- Quiet hours (21:00 to 08:00 here) are a store setting, not legal advice.
+- Quiet hours (21:00 to 08:00 here) are a store setting, not legal advice, and they are
+  computed in the store's time zone. A store that texts customers in other zones needs each
+  customer's zone.
+- The price check is an allow-list of inventory prices over money written in digits or
+  words; a figure in a phrasing it doesn't recognize still gets through.
 - Rules are English-only regular expressions; a misread in another language won't be caught.
 - `routineModel` is a stand-in for the replay, not a model to ship.
 

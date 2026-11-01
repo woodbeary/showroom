@@ -128,6 +128,14 @@ export async function turn(input: TurnInput): Promise<{ result: TurnResult; lead
 
   const path = onInbound(lead.state);
   const current = path[path.length - 1] as State;
+
+  if (reading.kind === "possible_stop") {
+    return {
+      result: { ...base, sendAt: null, path: [...path, "handed_off"], action: "handoff", text: null, handoff: { desk: "salesperson", reason: "possible_opt_out", by: "trigger" } },
+      lead: { ...lead, state: "handed_off" },
+    };
+  }
+
   const sendAt = earliestSend(decided, store.quietHours, store.timeZone);
 
   const handOff = (handoff: Handoff, extra: Partial<TurnResult> = {}) => {

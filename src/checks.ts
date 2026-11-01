@@ -28,7 +28,17 @@ const SENSITIVE =
 const PAYMENT_TERMS =
   /(?:\b(?:a|per)\s+mo(?:nth)?\b|\/\s*mo(?:nth)?\b|\bmonthly\b|\bpayments?\b|\bapr\b|\binterest\b|\brates?\b|\bapprov\w*|\bpre-?qual\w*|\bcredit\b|\bfinanc\w*|\bdown payment\b|\blease\b|\bleasing\b|\d\s*%)/gi;
 
-const MONEY = /\$\s?(\d[\d,]*(?:\.\d+)?)\s*(k\b)?|\b(\d[\d,]*(?:\.\d+)?)\s*(k|grand|dollars|bucks)\b/gi;
+const MONEY = /\$\s?(\d[\d,]*(?:\.\d+)?)\s*(k\b)?|\b(\d[\d,]*(?:\.\d+)?)\s*(k|grand|dollars|bucks)\b(?!\s*(?:miles?|mi)\b)/gi;
+
+const BARE_MONEY = /(?<![\w$.,:/-]|\$\s)(\d{1,3}(?:,\d{3})+|\d{4,})(\.\d+)?(?![\w,:/-]|\.\d|\s*(?:k|grand|dollars|bucks|miles?|mi)\b)/g;
+
+const YEAR = /^(?:19|20)\d{2}$/;
+
+const WORD_MONEY =
+  /\b(?:(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|few|couple)[\s-]+(?:of\s+)?)+(?:hundred|thousand|grand)\b(?!\s*(?:miles?|mi)\b)/gi;
+
+const DEAL_TERMS =
+  /\b(?:discount\w*|rebates?|incentives?|negotiab\w*|deals?|out[\s-]the[\s-]door|otd|guarantee\w*|best price|lowest price|price (?:drop|cut|match)\w*|(?:below|under) (?:list|sticker|asking|msrp)|knock\w*|shave\w*|wiggle room)\b|(?:\d|\b(?:grand|hundred|thousand|bucks|dollars))\s*k?\s+off\b/gi;
 
 const CLOCK = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\bnoon\b/gi;
 
@@ -44,6 +54,12 @@ function amounts(draft: string): { text: string; value: number }[] {
     const scale = unit === "k" || unit === "grand" ? 1000 : 1;
     out.push({ text: m[0].trim(), value: Math.round(Number(digits) * scale) });
   }
+  for (const m of draft.matchAll(BARE_MONEY)) {
+    const digits = m[1] ?? "";
+    if (YEAR.test(digits) && !m[2]) continue;
+    out.push({ text: m[0], value: Math.round(Number(`${digits.replace(/,/g, "")}${m[2] ?? ""}`)) });
+  }
+  for (const m of draft.matchAll(WORD_MONEY)) out.push({ text: m[0], value: Number.NaN });
   return out;
 }
 
@@ -78,6 +94,14 @@ export const CHECKS: readonly Check[] = [
       if (bad.length === 0) return null;
       const listed = ctx.facts.map((v) => `${v.stock} $${v.price.toLocaleString("en-US")}`).join(", ") || "nothing";
       return `${bad.map((a) => a.text).join(", ")} not a price the inventory returned (it returned ${listed})`;
+    },
+  },
+  {
+    name: "no_deal_terms",
+    desk: "sales_manager",
+    run: (draft) => {
+      const found = [...new Set([...draft.matchAll(DEAL_TERMS)].map((m) => `"${m[0].trim()}"`))];
+      return found.length ? `${found.join(", ")}: discounts, out-the-door figures and guarantees belong to the sales manager` : null;
     },
   },
   {

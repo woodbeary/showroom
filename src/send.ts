@@ -1,5 +1,7 @@
 import { appendFileSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, writeSync } from "node:fs";
+import { CHECKS, runChecks } from "./checks.ts";
 import { describe, inQuietHours, parseInstant } from "./clock.ts";
+import type { State } from "./journey.ts";
 import type { Store } from "./store.ts";
 import type { TurnResult } from "./turn.ts";
 
@@ -84,9 +86,29 @@ export interface CycleLine {
   detail: string;
 }
 
+const AT_SEND_TIME = CHECKS.filter((c) => c.name === "stop_honored" || c.name === "day_words_match_send_day");
+
+interface LeadNow {
+  state: State;
+  decidedAt: Date;
+}
+
+function leadsAsOf(turns: readonly TurnResult[], now: Date): Map<string, LeadNow> {
+  const out = new Map<string, LeadNow>();
+  for (const r of turns) {
+    const decidedAt = parseInstant(r.decidedAt, "decidedAt");
+    const state = r.path[r.path.length - 1];
+    if (!state || decidedAt.getTime() > now.getTime()) continue;
+    const seen = out.get(r.leadId);
+    if (!seen || seen.decidedAt.getTime() < decidedAt.getTime()) out.set(r.leadId, { state, decidedAt });
+  }
+  return out;
+}
+
 export async function cycle(queue: readonly TurnResult[], o: CycleOptions): Promise<CycleLine[]> {
   const lines: CycleLine[] = [];
   const known = o.ledger.latest();
+  const leads = leadsAsOf(queue, o.now);
   const sw = readSwitch(o.switchPath);
   const quiet = inQuietHours(o.now, o.store.quietHours, o.store.timeZone);
   const record = (r: TurnResult, id: string, state: SendState, detail: string, receipt?: string) => {
@@ -108,8 +130,28 @@ export async function cycle(queue: readonly TurnResult[], o: CycleOptions): Prom
       else record(r, id, "unconfirmed_never_resubmitted", "found in sending at start; lookup has no receipt");
       continue;
     }
+    const decidedAt = parseInstant(r.decidedAt, "decidedAt");
+    const lead = leads.get(r.leadId);
+    const later = lead && lead.decidedAt.getTime() > decidedAt.getTime() ? lead : null;
     const sendAt = parseInstant(r.sendAt, "sendAt");
-    if (sendAt.getTime() > o.now.getTime()) {
+    const due = sendAt.getTime() <= o.now.getTime();
+    const holds = runChecks(r.text, {
+      facts: [],
+      slots: [],
+      decidedAt,
+      sendAt: due ? o.now : sendAt,
+      optedOut: later?.state === "opted_out",
+      store: o.store,
+    }, AT_SEND_TIME);
+    if (holds.length > 0) {
+      record(r, id, "held", holds.map((h) => `${h.check}: ${h.detail}`).join("; "));
+      continue;
+    }
+    if (later?.state === "handed_off" && r.action !== "handoff") {
+      record(r, id, "held", `owner: a person took the lead ${describe(later.decidedAt, o.store.timeZone)}; the reply is theirs`);
+      continue;
+    }
+    if (!due) {
       lines.push({ requestId: id, outcome: "not_due", detail: `goes out ${describe(sendAt, o.store.timeZone)}` });
       continue;
     }

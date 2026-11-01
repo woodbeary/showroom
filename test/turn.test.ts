@@ -103,6 +103,17 @@ test("STOP opts out with no reply, and a later message goes to a person", async 
   assert.equal(model.calls.length, 0);
 });
 
+test("a possible opt-out goes to a person with no reply, before any model is asked", async () => {
+  const model = spy({ next: "engaged", draft: "hi" });
+  const { result, lead } = await turn({ lead: fresh({ state: "drive_offered" }), text: "wrong number", decidedAt: NOON, store, inventory, model });
+  assert.equal(model.calls.length, 0);
+  assert.equal(result.action, "handoff");
+  assert.equal(result.text, null);
+  assert.equal(result.sendAt, null);
+  assert.deepEqual(result.handoff, { desk: "salesperson", reason: "possible_opt_out", by: "trigger" });
+  assert.equal(lead.state, "handed_off");
+});
+
 test("every model request carries decidedAt and sendAt", async () => {
   const model = spy({ next: "engaged", draft: "Hi." });
   await turn({ lead: fresh(), text: "hello", decidedAt: "2026-11-04T21:52:00-08:00", store, inventory, model });

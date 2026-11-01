@@ -31,7 +31,25 @@ test("every price must equal a value the inventory returned", () => {
   assert.deepEqual(names("It's 31.9k."), []);
   assert.deepEqual(names("I can do $30,500 for you."), ["price_from_inventory"]);
   assert.deepEqual(names("It's $31,900.", ctx({ facts: [] })), ["price_from_inventory"]);
-  assert.deepEqual(names("Knock off 2 grand and it's yours."), ["price_from_inventory"]);
+  assert.deepEqual(names("Knock off 2 grand and it's yours."), ["price_from_inventory", "no_deal_terms"]);
+});
+
+test("a price without a dollar sign, or in words, must still be one inventory returned", () => {
+  for (const d of ["We can do 29,900 on it.", "It's yours for 29900", "Price drops to thirty thousand flat", "I can take two grand off."]) {
+    const holds = runChecks(d, ctx());
+    assert.ok(holds.some((h) => h.check === "price_from_inventory" && h.desk === "sales_manager"), d);
+  }
+  assert.deepEqual(names("It's listed at 31,900."), []);
+  assert.deepEqual(names("It's a 2023 with 21,400 miles."), []);
+  assert.deepEqual(names("It's got about thirty thousand miles."), []);
+});
+
+test("discounts, out-the-door figures and guarantees are held for the sales manager", () => {
+  for (const d of ["Price is $31,900 out the door.", "Guaranteed you'll get it today.", "I can knock 500 off", "We can do $500 off sticker.", "That's a great deal at $31,900."]) {
+    const holds = runChecks(d, ctx());
+    assert.ok(holds.some((h) => h.check === "no_deal_terms" && h.desk === "sales_manager"), d);
+  }
+  assert.deepEqual(names("The dealership team will have it charged. Ask for the front desk."), []);
 });
 
 test("identity and banking asks are held", () => {
