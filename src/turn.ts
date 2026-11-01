@@ -119,7 +119,7 @@ export async function turn(input: TurnInput): Promise<{ result: TurnResult; lead
   }
 
   if (lead.state === "opted_out" || lead.state === "handed_off") {
-    const reason = lead.state === "opted_out" ? "message_after_opt_out" : "already_handed_off";
+    const reason = lead.state === "opted_out" ? "message_after_opt_out" : reading.kind === "possible_stop" ? "possible_opt_out" : "already_handed_off";
     return {
       result: { ...base, sendAt: null, path: [lead.state], action: "handoff", text: null, handoff: { desk: "salesperson", reason, by: "owner" } },
       lead,

@@ -114,6 +114,14 @@ test("a possible opt-out goes to a person with no reply, before any model is ask
   assert.equal(lead.state, "handed_off");
 });
 
+test("a possible opt-out on a lead a person already owns is named for that person", async () => {
+  const model = spy({ next: "engaged", draft: "hi" });
+  const { result } = await turn({ lead: fresh({ state: "handed_off" }), text: "wrong number", decidedAt: NOON, store, inventory, model });
+  assert.equal(model.calls.length, 0);
+  assert.equal(result.text, null);
+  assert.deepEqual(result.handoff, { desk: "salesperson", reason: "possible_opt_out", by: "owner" });
+});
+
 test("every model request carries decidedAt and sendAt", async () => {
   const model = spy({ next: "engaged", draft: "Hi." });
   await turn({ lead: fresh(), text: "hello", decidedAt: "2026-11-04T21:52:00-08:00", store, inventory, model });

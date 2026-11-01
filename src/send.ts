@@ -91,6 +91,7 @@ const AT_SEND_TIME = CHECKS.filter((c) => c.name === "stop_honored" || c.name ==
 interface LeadNow {
   state: State;
   decidedAt: Date;
+  possibleStopAt: Date | null;
 }
 
 function leadsAsOf(turns: readonly TurnResult[], now: Date): Map<string, LeadNow> {
@@ -100,7 +101,10 @@ function leadsAsOf(turns: readonly TurnResult[], now: Date): Map<string, LeadNow
     const state = r.path[r.path.length - 1];
     if (!state || decidedAt.getTime() > now.getTime()) continue;
     const seen = out.get(r.leadId);
-    if (!seen || seen.decidedAt.getTime() < decidedAt.getTime()) out.set(r.leadId, { state, decidedAt });
+    const latest = !seen || seen.decidedAt.getTime() < decidedAt.getTime() ? { state, decidedAt } : seen;
+    const earlierStop = seen?.possibleStopAt ?? null;
+    const laterStop = r.reading.kind === "possible_stop" && (!earlierStop || earlierStop.getTime() < decidedAt.getTime());
+    out.set(r.leadId, { state: latest.state, decidedAt: latest.decidedAt, possibleStopAt: laterStop ? decidedAt : earlierStop });
   }
   return out;
 }
@@ -145,6 +149,10 @@ export async function cycle(queue: readonly TurnResult[], o: CycleOptions): Prom
     }, AT_SEND_TIME);
     if (holds.length > 0) {
       record(r, id, "held", holds.map((h) => `${h.check}: ${h.detail}`).join("; "));
+      continue;
+    }
+    if (lead?.possibleStopAt && lead.possibleStopAt.getTime() > decidedAt.getTime()) {
+      record(r, id, "held", `possible_opt_out: the customer may have opted out ${describe(lead.possibleStopAt, o.store.timeZone)}; a person decides before anything goes`);
       continue;
     }
     if (later?.state === "handed_off" && r.action !== "handoff") {

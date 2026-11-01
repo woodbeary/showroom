@@ -160,6 +160,43 @@ test("a handoff after a reply was queued holds the reply for the person, and the
   assert.deepEqual(texts, [HANDOFF_COPY]);
 });
 
+test("a possible opt-out after a handoff line was queued holds that line too, and nothing goes", async () => {
+  const base = fresh();
+  writeFileSync(`${base}.switch`, "on\n");
+  const sender = counting();
+  const lead: Lead = { id: "lead-w", stock: crossover.stock, state: "new", thread: [], offeredSlots: [] };
+  const model = scripted("test", []);
+  const money = await turn({ lead, text: "what would my monthly payment be?", decidedAt: "2026-11-04T21:52:00-08:00", store, inventory, model });
+  assert.equal(money.result.text, HANDOFF_COPY);
+  const wrong = await turn({ lead: money.lead, text: "wrong number", decidedAt: "2026-11-04T22:30:00-08:00", store, inventory, model });
+  assert.equal(wrong.result.handoff?.reason, "possible_opt_out");
+  const lines = await cycle([money.result, wrong.result], opts(base, { sender, now: new Date("2026-11-05T08:00:00-08:00") }));
+  assert.deepEqual(lines.map((l) => l.outcome), ["held"]);
+  assert.match(lines[0]?.detail ?? "", /^possible_opt_out: the customer may have opted out Wed 2026-11-04 10:30 pm/);
+  assert.equal(sender.sends, 0);
+});
+
+test("a possible opt-out after a reply was queued holds the reply as a possible opt-out", async () => {
+  const base = fresh();
+  writeFileSync(`${base}.switch`, "on\n");
+  const sender = counting();
+  const queue = await nightThenLater("no more texts", "2026-11-04T22:30:00-08:00");
+  const lines = await cycle(queue, opts(base, { sender, now: new Date("2026-11-05T08:00:00-08:00") }));
+  assert.deepEqual(lines.map((l) => l.outcome), ["held"]);
+  assert.match(lines[0]?.detail ?? "", /^possible_opt_out: /);
+  assert.equal(sender.sends, 0);
+});
+
+test("a possible opt-out holds only what was queued before it", async () => {
+  const base = fresh();
+  writeFileSync(`${base}.switch`, "on\n");
+  const sender = counting();
+  const [reply] = await nightThenLater("is it still there?", "2026-11-04T21:53:00-08:00");
+  const wrong = item({ leadId: "lead-n", decidedAt: "2026-11-04T21:00:00-08:00", sendAt: null, action: "handoff", text: null, reading: { kind: "possible_stop", asks: false, trigger: "possible_opt_out", desk: "salesperson" } });
+  const lines = await cycle([wrong, reply!], opts(base, { sender, now: new Date("2026-11-05T08:00:00-08:00") }));
+  assert.deepEqual(lines.map((l) => l.outcome), ["sent"]);
+});
+
 test("a later turn that leaves the lead with the agent does not hold an earlier reply", async () => {
   const base = fresh();
   writeFileSync(`${base}.switch`, "on\n");
