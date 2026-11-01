@@ -1,6 +1,6 @@
 {
   "name": "showroom",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Run a sales agent like a product: a typed journey state machine, pre-send checks that can only hold, transcript backtests labeled by what happened next, and holdouts read from the sales record.",
   "license": "MIT",
   "author": "Jacob Lopez",

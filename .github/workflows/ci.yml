@@ -32,6 +32,14 @@ jobs:
           mkdir -p .out
           pnpm -s showroom run examples/lead-0952pm.json --queue .out/outbox.jsonl
           pnpm -s showroom backtest examples/transcripts --gate .out/gate
+      - name: A STOP after a reply was queued holds the reply, and nothing reaches the provider
+        run: |
+          mkdir -p .out
+          pnpm -s showroom run examples/lead-0952pm-stop.json --queue .out/stop.jsonl
+          pnpm -s showroom switch .out/switch.txt on
+          pnpm -s showroom send .out/stop.jsonl --ledger .out/stop-ledger.jsonl --switch .out/switch.txt --live --now 2026-11-05T08:00:00-08:00 | tee .out/stop-send.txt
+          grep -q "held  *stop_honored: the customer opted out" .out/stop-send.txt
+          test ! -e .out/stop-ledger.jsonl.provider.jsonl
       - name: The synthetic data regenerates byte for byte
         run: |
           pnpm -s synth

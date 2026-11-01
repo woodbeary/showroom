@@ -9,26 +9,28 @@ can't write.
    `closed`). The model proposes the next state; code checks the move is legal and that its
    facts hold (the vehicle is available, the drive slots are inside store hours, the booked
    time was one we offered).
-2. **Pre-send checks that can only hold.** A draft that quotes a price inventory didn't return
-   (with or without a dollar sign, or in words), offers a discount, an out-the-door figure or a
-   guarantee, talks payments, APR, credit or approval, asks for an SSN or a date of birth, names
-   a time nobody offered, says "tomorrow" when it won't go out today, or breaks tone, is held. A
-   check returns a reason, never new text. A held draft becomes a handoff to the desk that owns
-   it, never silence.
+2. **Pre-send checks that can only hold.** A draft is held if it has a number nobody vouched for
+   (a price inventory didn't return, in digits, in shorthand like "29.9" or in words), a
+   discount, a promise or an out-the-door figure, payments, APR, credit or approval, a request
+   for an SSN or a date of birth, a time nobody offered, "tomorrow" when it won't go out today, or
+   a break in tone. A check returns a reason, never new text. A held draft becomes a handoff to
+   the desk that owns it, never silence.
 3. **Transcript backtests labeled by what happened next.** Each customer message in a past
    thread is graded against what the store actually did next (a routine reply, a person or a
    desk, nothing, an opt-out), not against anyone's opinion of the transcript. Failures are
-   tagged by mode, and every real misread becomes a regression fixture.
+   tagged by mode, routing is scored by desk, and every real misread becomes a regression
+   fixture.
 4. **Holdouts read from the sales record.** Leads are split by a hash of the lead ID, the
    primary metric is written down and hashed before launch, and the readout reads sales only
    from the dealer's sales record. Point it at the agent's own booking log and it refuses.
 5. **A send path for shadow and live.** A kill switch re-read every cycle, sends held in quiet
-   hours, a STOP or a handoff that arrives after a reply was queued holds that reply, and a
-   write-ahead ledger: a send whose answer was lost is looked up, never resent.
+   hours, a STOP, a possible opt-out or a handoff that arrives after a reply was queued holds
+   that reply, and a write-ahead ledger: a send whose answer was lost is looked up, never resent.
 
 TypeScript on Node 22.18+ (run directly, no build step), with a standard-library Python
 readout for the holdout. MIT. Everything here runs on synthetic data and a scripted or
-stand-in model, so it needs no API key.
+stand-in model, so it needs no API key. A real model can replay the same threads in shadow with
+`backtest --model`; that is off by default, and it needs the provider's key.
 
 Terms: a **handoff** is the moment the agent passes the customer to a person. A **holdout** is
 the share of leads kept on the human process as the control group. A **pre-registered
@@ -54,7 +56,8 @@ flowchart LR
 
 A question the model answers with silence is also a handoff. A message on a lead a person
 already owns goes to that person. A message that may be an opt-out without saying so plainly
-("wrong number", "no more texts") goes to a person with no reply at all.
+("wrong number", "no more texts", "lose my number") goes to a person with no reply at all, and
+holds everything already queued for that lead.
 
 ## Two-minute demo
 
@@ -137,7 +140,15 @@ Failure modes:
   extra_handoff     13  e.g. t-0006#4 "haha my brother says call me crazy for going electric. see you then"; t-0011#4 "the loan officer at my credit union already sorted it, see you then"
   missed_handoff     6  e.g. t-0032#0 "could you guys take my old truck off my hands too?"; t-0054#0 "could you guys take my old truck off my hands too?"
 
-Regression fixtures: 11 of 11 pass.
+Routing by desk, where the transcript names the desk the customer went to:
+named desk             n  agree       finance   appraisal   sales_mgr    cust_rel salesperson        none
+finance               51     44            44           0           0           0           0           7
+appraisal             20     11             0          11           0           0           2           7
+sales_manager         15     15             0           0          15           0           0           0
+customer_relations     4      4             0           0           0           4           0           0
+Routed to the named desk on 74 of 90 (82.2%). 28 handoffs a person picked up without naming a desk are scored as handoffs only.
+
+Regression fixtures: 24 of 24 pass.
 
 Wrote 464 agent decisions and 396 human labels to .out/gate/ in autonomy-gate's format.
 ```
@@ -149,12 +160,23 @@ text that way: buyer intent in casual words ("I've got about a 650 score, is tha
 an issue"), and handoff words in messages that need nothing ("call me crazy"). That is what a
 replay of real threads is for.
 
+The routing table scores the 90 transfers whose transcript names the desk the customer went to.
+74 reach that desk. The misses are planted casual phrasings ("my wife wants to know what we'd be
+paying every month" never reaches finance), plus two trade-in questions about a car on hold that
+went to a salesperson instead of appraisal. A handoff a person picked up without naming a desk
+counts as a handoff and is never given a guessed desk.
+
 `examples/transcripts/regressions.jsonl` holds the fixtures. Eight are the five misread
 families a replay of my own lead system found on 2026-10-13, reworded for a dealership. The
 first one: "Can I have your number?" must read as an ask and go to a salesperson. Put the old
 rule back (add `have` to the second `NOT_YET` pattern in `src/intent.ts` and drop
 `CONTACT_REQUEST` from `TRIGGERS`) and it reads as "maybe later" and fails;
-`test/intent.test.ts` does exactly that to prove the fixture catches it.
+`test/intent.test.ts` does exactly that to prove the fixture catches it. Thirteen more came from
+probing v0.1.0 on 2026-11-01. Twelve are opt-outs it read as ordinary messages: "revoke" and
+"opt out" (both named in 47 CFR 64.1200(a)(10)), the carrier keyword OPTOUT, STOP with a
+courtesy word, and possible opt-outs such as "wrong number" and "lose my number". The test runs
+each against v0.1.0's rules to show it failing there. The thirteenth, "Don't lose my number",
+must stay an ordinary message.
 
 **4. The holdout readout.**
 
@@ -212,13 +234,31 @@ row still in `sending` is settled by looking its request ID up at the sender, ne
 sending again. With `after_write` the lookup finds the receipt and it ends `sent`, still
 exactly once. Without `--live` the same command only logs (`shadowed`).
 
+**6. A STOP after the reply was queued.** The same 9:52 pm lead, but at 10:30 pm the customer
+texts STOP. The 8:00 cycle holds the reply that was queued for it, and the provider gets
+nothing:
+
+```text
+$ pnpm -s showroom run examples/lead-0952pm-stop.json --queue .out/stop.jsonl
+...
+turn 2  decidedAt Wed 2026-11-04 10:30 pm  (quiet hours 21:00-08:00)
+  customer  STOP
+  reading   stop
+  state     drive_offered -> opted_out
+  reply     (none: opt_out)
+
+final state: opted_out
+$ pnpm -s showroom send .out/stop.jsonl --ledger .out/stop-ledger.jsonl --switch .out/switch.txt --live --now 2026-11-05T08:00:00-08:00
+  lead-0952pm-stop@2026-11-04T21:52:00-08:00  held                            stop_honored: the customer opted out; nothing may be sent
+```
+
 `run --queue` writes every turn, including the ones that send nothing, and each cycle re-reads
-each lead's latest turn before anything goes out. If the customer texts STOP at 10:30 pm,
-after the 9:52 pm reply was queued for 8:00, the 8:00 cycle holds the reply
-(`stop_honored: the customer opted out; nothing may be sent`) and the provider gets nothing.
-If a person took the lead after a reply was queued, the reply is held for that person and the
-handoff line still goes. A reply that says "today" or "tomorrow" is checked again at the
-moment it would actually go out, and held if that is a later day than it was decided.
+each lead's turns before anything goes out. A STOP holds every reply queued before it. A
+possible opt-out ("wrong number") holds everything queued before it, the handoff line included,
+until a person decides. If a person took the lead after a reply was queued, the reply is held
+for that person and the handoff line still goes. A reply that says "today" or "tomorrow" is
+checked again at the moment it would actually go out, and held if that is a later day than it
+was decided.
 
 ## Why I built this
 
@@ -255,6 +295,18 @@ holdout, so the holdout here shows the method on synthetic data and claims no li
   test fails if any `.propose()` call in `src/` skips it. A proposal is a next state, a draft
   or `null`, and for drive offers the slots. A thrown error or a malformed proposal becomes a
   handoff.
+- **A real model, in shadow.** `backtest --model claude` (Claude Opus 5.5, or name another with
+  `claude:<model id>`; `--effort` sets `output_config.effort`, `low` by default) or
+  `backtest --model openai:<model id>` replays every thread through a real model. Both adapters
+  ask for one JSON schema: every field required, the optional ones nullable, and nothing either
+  provider's structured output rejects, so the one-to-three-slots rule stays in code. A refusal,
+  a cut-off or an incomplete response becomes a `model_error` handoff, and every proposal goes
+  through the same legal-move check and pre-send checks as any other. Its words reach only the
+  report and the `--gate` files; `run` and `send` refuse `--model`. Each call is timed and the
+  report prints the p95. `--threads` and `--concurrency` bound the cost and the load. It needs
+  `ANTHROPIC_API_KEY` (or an `ant auth` profile) or `OPENAI_API_KEY`, and the provider bills the
+  run. Server-side refusal fallbacks are left off: a refusal should reach a person, and a shadow
+  run should measure the model it names.
 - **A store.** `examples/store.json`: time zone, quiet hours, drive hours, tone limits.
   `examples/inventory.json`: the only source of a price.
 - **A sender.** `Sender.send(requestId, leadId, text)` and `Sender.lookup(requestId)`
@@ -266,8 +318,10 @@ holdout, so the holdout here shows the method on synthetic data and claims no li
 - **The go-live gate.** `backtest --gate` writes the agent's decisions and the human labels in
   [autonomy-gate](https://github.com/woodbeary/autonomy-gate)'s record format (reply = approve,
   handoff = hold, no reply or opt-out = skip), so its bars decide when shadow may become live.
-  On the synthetic export it stays RED on one bar, p95 decision time, because the stand-in has
-  no measured latency. That is the right answer until a real model runs in shadow.
+  On the synthetic export it stays RED on one bar, p95 decision time, because the stand-in
+  records no latency. That is the right answer until a real model runs in shadow. With
+  `--model`, each decision's `latency_s` and any model error go into the export, so the p95 and
+  model-unavailable bars are decided by a measured run.
 
 ## Next to a hosted agent platform
 
@@ -290,28 +344,35 @@ here.
 
 ## What was tested
 
-- `pnpm test`: 66 tests with `node:test`, passing locally on Node 22.22 and 24.15. They cover
+- `pnpm test`: 87 tests with `node:test`, passing locally on Node 22.22. They cover
   the legal moves and terminal states; the inbound rules against every regression fixture,
-  and the pre-fix rules failing the "have your number" fixture; every opt-out word in 47 CFR
-  64.1200(a)(10) and the carrier keywords reading as STOP, and possible opt-outs going to a
-  person with no reply; each pre-send check holding and passing, including prices with no
-  dollar sign or in words, and discount, out-the-door and guarantee wording; quiet hours
+  and the pre-fix rules failing the "have your number" fixture and each opt-out fixture from
+  the Nov 1 probe; every opt-out word in 47 CFR 64.1200(a)(10) and the carrier keywords
+  reading as STOP, and possible opt-outs going to a person with no reply; each pre-send check
+  holding and passing, including prices with no dollar sign, in dealer shorthand or in words,
+  discount, promise, out-the-door and guarantee wording, and times, years, counts and units
+  passing; routing scored by desk, with the 90 named transfers in the example; quiet hours
   across the November DST change; the three-turn demo end to end; a money question handing
   off before the model is called; illegal moves, silent answers and model errors becoming
   handoffs; the `decidedAt` lint over `src/`; label derivation, including that no label ever
   comes from an agent-written step; the 200-thread backtest counts; hash assignment against
-  shared vectors; the kill switch, shadow mode, quiet hours and a send that raises; a STOP or
-  a handoff after a reply was queued holding that reply, and "today" re-checked at the
-  actual send time; and a real child process that dies with exit code 137 inside `send()`,
-  before and after the provider write, then restarted twice, with exactly the expected
-  number of deliveries.
+  shared vectors; the kill switch, shadow mode, quiet hours and a send that raises; a STOP, a
+  possible opt-out or a handoff after a reply was queued holding that reply (a possible
+  opt-out holds a queued handoff line too), and "today" re-checked at the actual send time; a
+  real child process that dies with exit code 137 inside `send()`, before and after the
+  provider write, then restarted twice, with exactly the expected number of deliveries; both
+  model adapters driven through the real SDKs against a fake `fetch` (the request each sends,
+  nulls mapped back to absent fields, refusals, cut-offs and incomplete responses becoming
+  handoffs, an unlisted price from a model held, and each call's time and error reaching the
+  gate export); `run` and `send` refusing `--model`; and a shadow run whose every call fails
+  exiting 1 with both base URLs pointed at a closed local port.
 - `pnpm typecheck`: `tsc --strict` with `noUncheckedIndexedAccess` and
   `exactOptionalPropertyTypes`, clean.
 - `python3 -m unittest discover -s analysis`: 11 tests, passing locally on Python 3.11, 3.12
   and 3.13. They check the assignment against the same vectors as the TypeScript runtime,
   Wilson intervals against known values, the 30-day window edges, the example readout, and
   each refusal.
-- autonomy-gate at commit `d0b348c`, run locally on the `--gate` export:
+- autonomy-gate at commit `32e6c5b`, run locally on the `--gate` export:
   `autonomy-gate lint .out/gate/labels.jsonl` passes on 396 labels, and
   `autonomy-gate check --shadow .out/gate/shadow.jsonl --labels .out/gate/labels.jsonl` is
   RED on p95 decision time only, as above.
@@ -319,8 +380,9 @@ here.
   README's demo commands, and checks that `pnpm synth` regenerates the synthetic threads and
   experiment byte for byte.
 
-Not tested: a real model, a real messaging provider, a real dealer's sales record, or more
-than one runner sharing a ledger (run one runner per ledger).
+Not tested: a live call to a real model (the adapters are tested against faked API responses
+only), a real messaging provider, a real dealer's sales record, or more than one runner sharing
+a ledger (run one runner per ledger).
 
 ## Limits
 
@@ -331,8 +393,11 @@ than one runner sharing a ledger (run one runner per ledger).
 - Quiet hours (21:00 to 08:00 here) are a store setting, not legal advice, and they are
   computed in the store's time zone. A store that texts customers in other zones needs each
   customer's zone.
-- The price check is an allow-list of inventory prices over money written in digits or
-  words; a figure in a phrasing it doesn't recognize still gets through.
+- The price check accounts for every number in a draft, so a number it can't place is held
+  even when it isn't a price ("the 405"), and a spelled-out figure is held even when it equals
+  the listed price. That costs a handoff, never a wrong send. A figure with no digits and no
+  number word ("a few bucks") still gets through.
+- The routing score covers only transfers whose transcript names the desk.
 - Rules are English-only regular expressions; a misread in another language won't be caught.
 - `routineModel` is a stand-in for the replay, not a model to ship.
 
