@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install
+        run: |
+          npm install --global pnpm@10.28.0
+          pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: The README's demo commands run
+        run: |
+          mkdir -p .out
+          pnpm -s showroom run examples/lead-0952pm.json --queue .out/outbox.jsonl
+          pnpm -s showroom backtest examples/transcripts --gate .out/gate
+      - name: The synthetic data regenerates byte for byte
+        run: |
+          pnpm -s synth
+          git diff --exit-code examples/
+
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test the holdout readout
+        run: python -m unittest discover -s analysis -v
+      - name: The readout runs, and refuses the agent's own log
+        run: |
+          python analysis/holdout.py examples/experiment
+          set +e
+          python analysis/holdout.py examples/experiment --outcomes examples/experiment/agent-bookings.jsonl
+          test $? -eq 2
