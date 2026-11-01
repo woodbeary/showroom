@@ -249,7 +249,8 @@ async function cmdSend(file: string, v: Record<string, string | boolean | undefi
     store,
     now: typeof v.now === "string" ? parseInstant(v.now, "--now") : new Date(),
   });
-  for (const l of lines) console.log(`  ${pad(l.requestId, 42)}${pad(l.outcome, 32)}${l.detail}`);
+  const width = Math.max(42, ...lines.map((l) => l.requestId.length + 2));
+  for (const l of lines) console.log(`  ${pad(l.requestId, width)}${pad(l.outcome, 32)}${l.detail}`);
   return 0;
 }
 

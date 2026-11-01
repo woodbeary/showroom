@@ -1,0 +1,28 @@
+{
+  "lead": {
+    "id": "lead-0952pm-stop",
+    "stock": "U4821",
+    "state": "new",
+    "thread": [],
+    "offeredSlots": []
+  },
+  "model": "scripted: each turn's proposal stands in for a model's output",
+  "turns": [
+    {
+      "decidedAt": "2026-11-04T21:52:00-08:00",
+      "customer": "hi is the crossover still there? can I see it after work?",
+      "proposal": {
+        "next": "drive_offered",
+        "slots": [
+          "2026-11-05T17:30:00-08:00",
+          "2026-11-05T18:15:00-08:00"
+        ],
+        "draft": "Hi, it's still here. I can have it charged and up front Thursday at 5:30 pm or 6:15 pm. Which works better?"
+      }
+    },
+    {
+      "decidedAt": "2026-11-04T22:30:00-08:00",
+      "customer": "STOP"
+    }
+  ]
+}
