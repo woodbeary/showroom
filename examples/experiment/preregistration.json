@@ -1,0 +1,22 @@
+{
+  "experiment": "showroom-synthetic-pilot",
+  "note": "Synthetic. Every lead, sale and booking in this folder was made by scripts/synth.ts.",
+  "registeredAt": "2026-06-29T17:00:00Z",
+  "launchAt": "2026-07-01T15:00:00Z",
+  "enrollUntil": "2026-08-31T07:00:00Z",
+  "readoutNotBefore": "2026-09-30T07:00:00Z",
+  "assignment": {
+    "unit": "lead_id",
+    "rule": "holdout when the first 4 bytes of sha256(salt + ':' + lead_id), read big-endian and divided by 2^32, are below holdoutShare",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2
+  },
+  "primaryMetric": {
+    "name": "sold_within_30_days",
+    "definition": "the lead has a sale in the dealer's sales record within 30 days after the lead was created",
+    "windowDays": 30,
+    "source": { "path": "sales.csv", "system": "dealer_sales_record" }
+  },
+  "test": { "kind": "two_proportion_z", "sides": 2, "alpha": 0.05, "power": 0.8, "minimumDetectableEffect": 0.02 },
+  "agentSystems": ["showroom"]
+}

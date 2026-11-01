@@ -1,0 +1,79 @@
+[
+  {
+    "leadId": "X-00001",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.956053228,
+    "arm": "agent"
+  },
+  {
+    "leadId": "X-00002",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.662284521,
+    "arm": "agent"
+  },
+  {
+    "leadId": "X-00017",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.674130019,
+    "arm": "agent"
+  },
+  {
+    "leadId": "lead-0952pm",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.859561255,
+    "arm": "agent"
+  },
+  {
+    "leadId": "L-0001",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.931230535,
+    "arm": "agent"
+  },
+  {
+    "leadId": "L-0200",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.04692309,
+    "arm": "holdout"
+  },
+  {
+    "leadId": "a",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.872363705,
+    "arm": "agent"
+  },
+  {
+    "leadId": "ünïcødé-lead",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.853384453,
+    "arm": "agent"
+  },
+  {
+    "leadId": "00000",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.26639704,
+    "arm": "agent"
+  },
+  {
+    "leadId": "X-01999",
+    "salt": "pilot-2026-07",
+    "holdoutShare": 0.2,
+    "score": 0.667730655,
+    "arm": "agent"
+  },
+  {
+    "leadId": "X-00001",
+    "salt": "pilot-2026-09",
+    "holdoutShare": 0.2,
+    "score": 0.654732156,
+    "arm": "agent"
+  }
+]
