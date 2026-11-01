@@ -28,17 +28,26 @@ const SENSITIVE =
 const PAYMENT_TERMS =
   /(?:\b(?:a|per)\s+mo(?:nth)?\b|\/\s*mo(?:nth)?\b|\bmonthly\b|\bpayments?\b|\bapr\b|\binterest\b|\brates?\b|\bapprov\w*|\bpre-?qual\w*|\bcredit\b|\bfinanc\w*|\bdown payment\b|\blease\b|\bleasing\b|\d\s*%)/gi;
 
-const MONEY = /\$\s?(\d[\d,]*(?:\.\d+)?)\s*(k\b)?|\b(\d[\d,]*(?:\.\d+)?)\s*(k|grand|dollars|bucks)\b(?!\s*(?:miles?|mi)\b)/gi;
+const NUMBER = /(?<![\w.,:/$])(\$\s?)?(\d[\d,]*)(\.\d+)?/g;
 
-const BARE_MONEY = /(?<![\w$.,:/-]|\$\s)(\d{1,3}(?:,\d{3})+|\d{4,})(\.\d+)?(?![\w,:/-]|\.\d|\s*(?:k|grand|dollars|bucks|miles?|mi)\b)/g;
+const MONEY_UNIT = /^\s*(k|grand|dollars?|bucks)\b/i;
+
+const NOT_MONEY_AFTER =
+  /^(?:\s*(?:a\.?m\.?|p\.?m\.?)(?![a-z])|:\d|\/\d|[a-z]|[\s-]*(?:%|°|(?:miles?|mi|mph|mpg|mpge|kw|kwh|kilowatt\w*|minutes?|mins?|hours?|hrs?|days?|weeks?|seconds?|secs?|seats?|seaters?|doors?|rows?|inch(?:es)?|ft|feet|foot|lbs?|pounds|volts?|amps?|hp|horsepower|cubic|percent|degrees?|owners?|keys?|cylinders?|passengers?|people|stars?)\b))/i;
 
 const YEAR = /^(?:19|20)\d{2}$/;
 
-const WORD_MONEY =
-  /\b(?:(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|few|couple)[\s-]+(?:of\s+)?)+(?:hundred|thousand|grand)\b(?!\s*(?:miles?|mi)\b)/gi;
+const COUNT_BELOW = 13;
+
+const NUMBER_WORD =
+  "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|grand|few|couple";
+
+const SPELLED = new RegExp(`\\b(?:an?\\s+)?(?:${NUMBER_WORD})(?:(?:[\\s-]+(?:and|of))?[\\s-]+(?:${NUMBER_WORD}))*\\b`, "gi");
+
+const SPELLED_LARGE = /\b(?:thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|grand)\b/i;
 
 const DEAL_TERMS =
-  /\b(?:discount\w*|rebates?|incentives?|negotiab\w*|deals?|out[\s-]the[\s-]door|otd|guarantee\w*|best price|lowest price|price (?:drop|cut|match)\w*|(?:below|under) (?:list|sticker|asking|msrp)|knock\w*|shave\w*|wiggle room)\b|(?:\d|\b(?:grand|hundred|thousand|bucks|dollars))\s*k?\s+off\b/gi;
+  /\b(?:discount\w*|rebates?|incentives?|negotiab\w*|deals?|out[\s-]the[\s-]door|otd|guarantee\w*|promis\w*|best price|lowest price|final (?:price|offer|number)|better (?:number|price|deal|offer)|price (?:drop|cut|match)\w*|(?:below|under) (?:list|sticker|asking|msrp)|knock\w*|shave\w*|wiggle room|throw(?:ing|n)?\s+in|threw\s+in|waiv\w*|meet you (?:at|in the middle)|hold it for you|(?:do|work) (?:something )?on (?:the )?price)\b|(?:\d|\b(?:grand|hundred|thousand|bucks|dollars))\s*k?\s+off\b/gi;
 
 const CLOCK = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\bnoon\b/gi;
 
@@ -46,20 +55,37 @@ const WEEKDAY = /\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/
 
 const DAY_WORDS = /\b(today|tonight|tomorrow|this (?:morning|afternoon|evening))\b/i;
 
-function amounts(draft: string): { text: string; value: number }[] {
-  const out: { text: string; value: number }[] = [];
-  for (const m of draft.matchAll(MONEY)) {
-    const digits = (m[1] ?? m[3] ?? "").replace(/,/g, "");
-    const unit = (m[2] ?? m[4] ?? "").toLowerCase();
-    const scale = unit === "k" || unit === "grand" ? 1000 : 1;
-    out.push({ text: m[0].trim(), value: Math.round(Number(digits) * scale) });
+interface Amount {
+  text: string;
+  values: number[];
+}
+
+function amounts(draft: string): Amount[] {
+  const out: Amount[] = [];
+  for (const m of draft.matchAll(NUMBER)) {
+    const digits = (m[2] ?? "").replace(/,+$/, "");
+    const decimal = m[3] ?? "";
+    const rest = draft.slice((m.index ?? 0) + m[0].length);
+    const unit = MONEY_UNIT.exec(rest);
+    const dollar = Boolean(m[1]);
+    const face = Number(`${digits.replace(/,/g, "")}${decimal}`);
+    if (unit) {
+      const scale = /^(?:k|grand)$/i.test(unit[1] ?? "") ? 1000 : 1;
+      out.push({ text: `${m[0]}${unit[0]}`.trim(), values: [Math.round(face * scale)] });
+      continue;
+    }
+    if (dollar) {
+      out.push({ text: m[0].trim(), values: [Math.round(face)] });
+      continue;
+    }
+    if (NOT_MONEY_AFTER.test(rest)) continue;
+    if (!decimal && (YEAR.test(digits) || face < COUNT_BELOW)) continue;
+    out.push({ text: m[0], values: face < 1000 ? [face, Math.round(face * 1000)] : [Math.round(face)] });
   }
-  for (const m of draft.matchAll(BARE_MONEY)) {
-    const digits = m[1] ?? "";
-    if (YEAR.test(digits) && !m[2]) continue;
-    out.push({ text: m[0], value: Math.round(Number(`${digits.replace(/,/g, "")}${m[2] ?? ""}`)) });
+  for (const m of draft.matchAll(SPELLED)) {
+    const rest = draft.slice((m.index ?? 0) + m[0].length);
+    if (SPELLED_LARGE.test(m[0]) && !NOT_MONEY_AFTER.test(rest)) out.push({ text: m[0], values: [] });
   }
-  for (const m of draft.matchAll(WORD_MONEY)) out.push({ text: m[0], value: Number.NaN });
   return out;
 }
 
@@ -90,7 +116,7 @@ export const CHECKS: readonly Check[] = [
     desk: "sales_manager",
     run: (draft, ctx) => {
       const known = new Set(ctx.facts.map((v) => v.price));
-      const bad = amounts(draft).filter((a) => !known.has(a.value));
+      const bad = amounts(draft).filter((a) => !a.values.some((v) => known.has(v)));
       if (bad.length === 0) return null;
       const listed = ctx.facts.map((v) => `${v.stock} $${v.price.toLocaleString("en-US")}`).join(", ") || "nothing";
       return `${bad.map((a) => a.text).join(", ")} not a price the inventory returned (it returned ${listed})`;

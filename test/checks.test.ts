@@ -44,6 +44,33 @@ test("a price without a dollar sign, or in words, must still be one inventory re
   assert.deepEqual(names("It's got about thirty thousand miles."), []);
 });
 
+test("dealer shorthand and spelled-out figures must still be ones inventory returned", () => {
+  for (const d of ["We can do 29.9 on it.", "twenty-nine nine and it's yours", "I'll let it go for 30.", "I can do a thousand less", "thirty-one nine", "29-30k is the range", "29 900 flat"]) {
+    const holds = runChecks(d, ctx());
+    assert.ok(holds.some((h) => h.check === "price_from_inventory" && h.desk === "sales_manager"), d);
+  }
+  assert.deepEqual(names("It's 31.9."), []);
+  assert.deepEqual(names("It's listed at 31,900, or 31.9k if you like."), []);
+});
+
+test("numbers that are not money pass: times, years, counts and measured units", () => {
+  for (const d of [
+    "It's here and ready to drive. I can have it up front Thursday at 5:30 pm or 6:15 pm. Which works better?",
+    "It's a 2023 with 21,400 miles, seats 5, and charges at 11.5 kW.",
+    "Range is about 300 miles on a full charge, and it has two keys and one owner.",
+    "Thursday 11/5 at 5:30 pm works. Twenty minutes is plenty for the drive.",
+  ]) {
+    assert.deepEqual(names(d), [], d);
+  }
+});
+
+test("promises, concessions and price talk the model starts are held for the sales manager", () => {
+  for (const d of ["I promise it's yours at $31,900.", "We'll throw in free charging.", "We'll waive the doc fee.", "$31,900 is my final price.", "I'll get you a better number.", "We can meet you in the middle.", "I can hold it for you until Thursday.", "Let me see what I can do on price."]) {
+    const holds = runChecks(d, ctx());
+    assert.ok(holds.some((h) => h.check === "no_deal_terms" && h.desk === "sales_manager"), d);
+  }
+});
+
 test("discounts, out-the-door figures and guarantees are held for the sales manager", () => {
   for (const d of ["Price is $31,900 out the door.", "Guaranteed you'll get it today.", "I can knock 500 off", "We can do $500 off sticker.", "That's a great deal at $31,900."]) {
     const holds = runChecks(d, ctx());
