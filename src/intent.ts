@@ -8,6 +8,8 @@ export const DESK_NAMES: Readonly<Record<Desk, string>> = {
   salesperson: "salesperson",
 };
 
+export const DESKS = Object.keys(DESK_NAMES) as readonly Desk[];
+
 export type Kind = "stop" | "possible_stop" | "handoff" | "ask" | "decline" | "not_yet" | "other";
 
 export interface Reading {

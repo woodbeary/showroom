@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { test } from "node:test";
-import { backtestThread, gateExport, labelAt, loadBacktestDir, runFixtures, summarize, tagFor, type Thread } from "../src/backtest.ts";
+import { backtestThread, gateExport, labelAt, loadBacktestDir, routing, runFixtures, summarize, tagFor, type Thread } from "../src/backtest.ts";
 import { routineModel } from "../src/standin.ts";
 import { crossover, EX, inventory, store } from "./helpers.ts";
 
@@ -13,12 +13,36 @@ test("labels come from what happened next", () => {
   const ask = { at: at(0), from: "customer" as const, text: "is it still there?" };
   assert.deepEqual(labelAt(thread([ask, { at: at(10), from: "template", template: "offer_times" }]), 0), { label: "reply" });
   assert.deepEqual(labelAt(thread([ask, { at: at(10), from: "staff", text: "calling you" }]), 0), { label: "handoff" });
-  assert.deepEqual(labelAt(thread([ask, { at: at(10), from: "transfer", desk: "finance" }]), 0), { label: "handoff" });
+  assert.deepEqual(labelAt(thread([ask, { at: at(10), from: "transfer", desk: "finance" }]), 0), { label: "handoff", desk: "finance" });
   assert.deepEqual(labelAt(thread([ask, { at: at(1), from: "system", event: "opted_out" }]), 0), { label: "opt_out" });
   assert.deepEqual(labelAt(thread([ask, { at: at(30), from: "customer", text: "hello?" }]), 0), { label: "no_reply" });
   assert.deepEqual(labelAt(thread([ask]), 0), { label: "no_reply" });
   assert.deepEqual(labelAt(thread([ask], at(60)), 0), { unscored: "unknown" });
   assert.deepEqual(labelAt(thread([ask, { at: at(49 * 60), from: "template", template: "offer_times" }]), 0), { label: "no_reply" });
+});
+
+test("routing is scored by desk where the transcript names one, and only there", async () => {
+  const model = routineModel();
+  const handoff = (id: string, text: string, next: Thread["events"][number]): Thread => ({
+    ...thread([{ at: at(0), from: "customer", text }, next]),
+    id,
+  });
+  const threads = [
+    handoff("paid", "What would my monthly payment be?", { at: at(10), from: "transfer", desk: "finance" }),
+    handoff("otd", "what's the out the door number?", { at: at(10), from: "transfer", desk: "finance" }),
+    handoff("truck", "could you guys take my old truck off my hands too?", { at: at(10), from: "transfer", desk: "appraisal" }),
+    handoff("call", "please call me asap", { at: at(10), from: "staff", text: "calling you now" }),
+  ];
+  const points = (await Promise.all(threads.map((t) => backtestThread(t, model, store, inventory)))).flat();
+  assert.deepEqual(points.map((p) => [p.labelDesk, p.predictedDesk]), [["finance", "finance"], ["finance", "sales_manager"], ["appraisal", null], [null, "salesperson"]]);
+  const r = routing(points);
+  assert.equal(r.named, 3);
+  assert.equal(r.agree, 1);
+  assert.equal(r.unnamed, 1);
+  assert.deepEqual(r.byDesk, [{ desk: "finance", n: 2, agree: 1 }, { desk: "appraisal", n: 1, agree: 0 }]);
+  assert.equal(r.confusion.finance.finance, 1);
+  assert.equal(r.confusion.finance.sales_manager, 1);
+  assert.equal(r.confusion.appraisal.no_handoff, 1);
 });
 
 test("an agent-written next step is never a label", () => {
@@ -47,6 +71,8 @@ test("the example backtest: 200 threads, provenance kept, fixtures pass", async 
   assert.equal(r.scored.filter((p) => !p.tag).length, 340);
   assert.ok(r.unscored.agent_authored > 0);
   assert.ok(r.fixtures.length >= 10 && r.fixtures.every((f) => f.passed), JSON.stringify(r.fixtures.filter((f) => !f.passed)));
+  assert.deepEqual([r.routing.named, r.routing.agree, r.routing.unnamed], [90, 74, 28]);
+  assert.deepEqual(r.routing.byDesk.map((d) => [d.desk, d.n, d.agree]), [["finance", 51, 44], ["appraisal", 20, 11], ["sales_manager", 15, 15], ["customer_relations", 4, 4]]);
 
   const byId = new Map(threads.map((t) => [t.id, t]));
   for (const p of points) {

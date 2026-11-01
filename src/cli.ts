@@ -2,9 +2,9 @@
 import { appendFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { gateExport, loadBacktestDir, backtestThread, runFixtures, summarize, ACTIONS, type Report, type Tag } from "./backtest.ts";
+import { gateExport, loadBacktestDir, backtestThread, runFixtures, summarize, ACTIONS, NO_HANDOFF, type Report, type Routed, type Tag } from "./backtest.ts";
 import { describe, inQuietHours, parseInstant } from "./clock.ts";
-import { DESK_NAMES } from "./intent.ts";
+import { DESK_NAMES, DESKS } from "./intent.ts";
 import { scripted, type Proposal } from "./model.ts";
 import { Ledger, FileSender, cycle, type CrashPoint } from "./send.ts";
 import { routineModel } from "./standin.ts";
@@ -97,6 +97,7 @@ function printReport(r: Report): void {
   for (const [tag, pts] of Object.entries(r.tags) as [Tag, Report["points"]][]) {
     console.log(`  ${pad(tag, 16)}${lpad(pts.length, 4)}  e.g. ${pts.slice(0, 2).map((p) => `${p.id} "${p.text}"`).join("; ")}`);
   }
+  printRouting(r.routing);
   if (r.held) console.log(`\nPre-send checks held ${r.held} drafts; each became a handoff.`);
   if (r.fixtures.length) {
     const failed = r.fixtures.filter((f) => !f.passed);
@@ -105,6 +106,26 @@ function printReport(r: Report): void {
       console.log(`  FAIL ${f.fixture.id} "${f.fixture.text}" expected ${JSON.stringify(f.fixture.expect)}, got ${JSON.stringify(f.got)}`);
     }
   }
+}
+
+const ROUTED_HEADER: Readonly<Record<Routed, string>> = {
+  finance: "finance",
+  appraisal: "appraisal",
+  sales_manager: "sales_mgr",
+  customer_relations: "cust_rel",
+  salesperson: "salesperson",
+  [NO_HANDOFF]: "none",
+};
+
+function printRouting(r: Report["routing"]): void {
+  if (r.named === 0) return;
+  const routed: Routed[] = [...DESKS, NO_HANDOFF];
+  console.log(`\nRouting by desk, where the transcript names the desk the customer went to:`);
+  console.log(`${pad("named desk", 20)}${lpad("n", 4)}${lpad("agree", 7)}  ${routed.map((d) => lpad(ROUTED_HEADER[d], 12)).join("")}`);
+  for (const row of r.byDesk) {
+    console.log(`${pad(row.desk, 20)}${lpad(row.n, 4)}${lpad(row.agree, 7)}  ${routed.map((d) => lpad(r.confusion[row.desk][d], 12)).join("")}`);
+  }
+  console.log(`Routed to the named desk on ${r.agree} of ${r.named} (${((100 * r.agree) / r.named).toFixed(1)}%). ${r.unnamed} handoffs a person picked up without naming a desk are scored as handoffs only.`);
 }
 
 async function cmdBacktest(dir: string, opts: { store: Store; inventory: Vehicle[]; gate?: string; json: boolean }): Promise<number> {

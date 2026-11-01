@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseInstant } from "./clock.ts";
-import { readInbound, type Desk, type Kind } from "./intent.ts";
+import { DESKS, readInbound, type Desk, type Kind } from "./intent.ts";
 import { onInbound, STATES, type State } from "./journey.ts";
 import type { Message, Model } from "./model.ts";
 import type { Store, Vehicle } from "./store.ts";
@@ -42,8 +42,10 @@ export interface Point {
   text: string;
   state: State;
   label: Label | null;
+  labelDesk: Desk | null;
   unscored: Unscored | null;
   predicted: Action;
+  predictedDesk: Desk | null;
   tag: Tag | null;
   result: TurnResult;
 }
@@ -52,7 +54,9 @@ export const WINDOW_MS = 48 * 60 * 60 * 1000;
 
 const SOURCES: readonly Source[] = ["customer", "template", "staff", "transfer", "system", "agent"];
 
-export function labelAt(thread: Thread, i: number): { label: Label } | { unscored: Unscored } {
+export type Outcome = { label: Label; desk?: Desk } | { unscored: Unscored };
+
+export function labelAt(thread: Thread, i: number): Outcome {
   const start = parseInstant(thread.events[i]?.at, "event at").getTime();
   const end = start + WINDOW_MS;
   for (let j = i + 1; j < thread.events.length; j++) {
@@ -63,7 +67,7 @@ export function labelAt(thread: Thread, i: number): { label: Label } | { unscore
     if (e.from === "system" && e.event === "opted_out") return { label: "opt_out" };
     if (e.from === "agent") return { unscored: "agent_authored" };
     if (e.from === "template") return { label: "reply" };
-    if (e.from === "staff" || e.from === "transfer") return { label: "handoff" };
+    if (e.from === "staff" || e.from === "transfer") return { label: "handoff", ...(e.desk ? { desk: e.desk } : {}) };
   }
   return parseInstant(thread.observedUntil, "observedUntil").getTime() >= end ? { label: "no_reply" } : { unscored: "unknown" };
 }
@@ -124,7 +128,7 @@ export async function backtestThread(thread: Thread, model: Model, store: Store,
     const text = e.text ?? "";
     const { result } = await turn({ lead, text, decidedAt: e.at, store, inventory, model });
     const owned = lead.state === "handed_off" || lead.state === "opted_out";
-    const outcome = owned ? { unscored: "person_owned" as const } : labelAt(thread, i);
+    const outcome: Outcome = owned ? { unscored: "person_owned" } : labelAt(thread, i);
     const label = "label" in outcome ? outcome.label : null;
     points.push({
       id: `${thread.id}#${i}`,
@@ -133,8 +137,10 @@ export async function backtestThread(thread: Thread, model: Model, store: Store,
       text,
       state: lead.state,
       label,
+      labelDesk: "label" in outcome ? (outcome.desk ?? null) : null,
       unscored: "unscored" in outcome ? outcome.unscored : null,
       predicted: result.action,
+      predictedDesk: result.action === "handoff" ? (result.handoff?.desk ?? null) : null,
       tag: label ? tagFor(label, result.action) : null,
       result,
     });
@@ -183,6 +189,37 @@ export async function runFixtures(fixtures: readonly Fixture[], model: Model, st
   return out;
 }
 
+export const NO_HANDOFF = "no_handoff";
+
+export type Routed = Desk | typeof NO_HANDOFF;
+
+export interface Routing {
+  named: number;
+  agree: number;
+  unnamed: number;
+  byDesk: { desk: Desk; n: number; agree: number }[];
+  confusion: Record<Desk, Record<Routed, number>>;
+}
+
+export function routing(scored: readonly Point[]): Routing {
+  const routed: readonly Routed[] = [...DESKS, NO_HANDOFF];
+  const confusion = Object.fromEntries(DESKS.map((d) => [d, Object.fromEntries(routed.map((r) => [r, 0]))])) as Routing["confusion"];
+  const handoffs = scored.filter((p) => p.label === "handoff");
+  const named = handoffs.filter((p) => p.labelDesk !== null);
+  for (const p of named) confusion[p.labelDesk as Desk][p.predictedDesk ?? NO_HANDOFF]++;
+  const byDesk = DESKS.map((desk) => {
+    const here = named.filter((p) => p.labelDesk === desk);
+    return { desk, n: here.length, agree: here.filter((p) => p.predictedDesk === desk).length };
+  }).filter((r) => r.n > 0);
+  return {
+    named: named.length,
+    agree: named.filter((p) => p.predictedDesk === p.labelDesk).length,
+    unnamed: handoffs.length - named.length,
+    byDesk,
+    confusion,
+  };
+}
+
 export interface Report {
   threads: number;
   points: Point[];
@@ -191,6 +228,7 @@ export interface Report {
   confusion: Record<Label, Record<Action, number>>;
   byState: { state: State; n: number; agree: number; tags: Partial<Record<Tag, number>> }[];
   tags: Partial<Record<Tag, Point[]>>;
+  routing: Routing;
   held: number;
   fixtures: FixtureResult[];
 }
@@ -212,7 +250,7 @@ export function summarize(threads: number, points: Point[], fixtures: FixtureRes
     return { state, n: here.length, agree: here.filter((p) => !p.tag).length, tags: t };
   }).filter((r) => r.n > 0);
   const held = points.filter((p) => p.result.holds.length > 0).length;
-  return { threads, points, scored, unscored, confusion, byState, tags, held, fixtures };
+  return { threads, points, scored, unscored, confusion, byState, tags, routing: routing(scored), held, fixtures };
 }
 
 export function loadBacktestDir(dir: string): { threads: Thread[]; fixtures: Fixture[] } {

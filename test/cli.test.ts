@@ -27,6 +27,8 @@ test("showroom backtest exits 0 with every fixture passing and writes the gate f
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /Regression fixtures: 24 of 24 pass\./);
   assert.match(out.stdout, /label \\ agent/);
+  assert.match(out.stdout, /Routed to the named desk on 74 of 90 \(82\.2%\)\./);
+  assert.match(out.stdout, /\nappraisal +20 +11 +0 +11 +0 +0 +2 +7\n/);
   const labels = readFileSync(join(dir, "gate", "labels.jsonl"), "utf8").trim().split("\n");
   assert.ok(labels.every((l) => JSON.parse(l).decision.decidedBy === "human"));
 });
