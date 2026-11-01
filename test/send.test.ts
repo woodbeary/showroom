@@ -25,6 +25,7 @@ const item = (over: Partial<TurnResult> = {}): TurnResult => ({
   reading: { kind: "ask", asks: true, trigger: null, desk: null },
   model: "test",
   proposal: null,
+  latencyMs: null,
   holds: [],
   handoff: null,
   ...over,

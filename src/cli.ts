@@ -1,11 +1,14 @@
 #!/usr/bin/env node
+import type OpenAI from "openai";
 import { appendFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { gateExport, loadBacktestDir, backtestThread, runFixtures, summarize, ACTIONS, NO_HANDOFF, type Report, type Routed, type Tag } from "./backtest.ts";
+import { gateExport, loadBacktestDir, backtestThread, runFixtures, summarize, ACTIONS, NO_HANDOFF, type Report, type Routed, type Tag, type Thread } from "./backtest.ts";
+import { claudeModel, EFFORTS, type Effort } from "./claude.ts";
 import { describe, inQuietHours, parseInstant } from "./clock.ts";
 import { DESK_NAMES, DESKS } from "./intent.ts";
-import { scripted, type Proposal } from "./model.ts";
+import { scripted, type Model, type Proposal } from "./model.ts";
+import { openaiModel } from "./openai.ts";
 import { Ledger, FileSender, cycle, type CrashPoint } from "./send.ts";
 import { routineModel } from "./standin.ts";
 import { loadInventory, loadStore, lookupVehicle, readJson, type Store, type Vehicle } from "./store.ts";
@@ -17,11 +20,18 @@ const USAGE = `showroom: run a sales agent like a product
 
   showroom run <lead.json> [--queue outbox.jsonl] [--json]
   showroom backtest <dir> [--gate <outdir>] [--json]
+           [--model claude[:<id>]|openai:<id>] [--effort low|medium|high|xhigh|max]
+           [--threads <n>] [--concurrency <n>]
   showroom send <outbox.jsonl> --ledger <file> --switch <file> [--live] [--now <iso>]
   showroom switch <file> on|off
 
   --store <store.json>          default examples/store.json
   --inventory <inventory.json>  default examples/inventory.json
+
+  backtest runs the code-owned stand-in unless --model names a real model. A real model
+  runs in shadow only: its drafts go to the report and the --gate files, never to an
+  outbox. It needs the provider's credentials (ANTHROPIC_API_KEY or an ant auth profile;
+  OPENAI_API_KEY) and is billed by the provider.
 `;
 
 class UsageError extends Error {}
@@ -128,10 +138,78 @@ function printRouting(r: Report["routing"]): void {
   console.log(`Routed to the named desk on ${r.agree} of ${r.named} (${((100 * r.agree) / r.named).toFixed(1)}%). ${r.unnamed} handoffs a person picked up without naming a desk are scored as handoffs only.`);
 }
 
-async function cmdBacktest(dir: string, opts: { store: Store; inventory: Vehicle[]; gate?: string; json: boolean }): Promise<number> {
-  const { threads, fixtures } = loadBacktestDir(dir);
-  const model = routineModel();
-  const points = (await Promise.all(threads.map((t) => backtestThread(t, model, opts.store, opts.inventory)))).flat();
+const MODEL_TIMEOUT_MS = 60_000;
+
+async function realModel(spec: string, effort: string | undefined): Promise<Model> {
+  const [provider, ...rest] = spec.split(":");
+  const id = rest.join(":");
+  if (effort !== undefined && !(EFFORTS as readonly string[]).includes(effort)) throw new UsageError(`--effort must be one of ${EFFORTS.join(", ")}`);
+  if (provider === "claude") {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    return claudeModel({ client: new Anthropic({ timeout: MODEL_TIMEOUT_MS }), ...(id ? { model: id } : {}), ...(effort ? { effort: effort as Effort } : {}) });
+  }
+  if (provider === "openai") {
+    if (effort !== undefined) throw new UsageError("--effort applies to claude only");
+    if (!id) throw new UsageError("--model openai:<model id> must name the model; there is no default");
+    const { default: OpenAIClient } = await import("openai");
+    let client: OpenAI;
+    try {
+      client = new OpenAIClient({ timeout: MODEL_TIMEOUT_MS });
+    } catch (error) {
+      throw new UsageError(`--model ${spec} needs OPENAI_API_KEY: ${(error as Error).message}`);
+    }
+    return openaiModel({ client, model: id });
+  }
+  throw new UsageError(`unknown --model ${spec}: use claude, claude:<model id> or openai:<model id>`);
+}
+
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return out;
+}
+
+function printModelCalls(name: string, m: Report["modelCalls"]): void {
+  if (m.timed === 0) return;
+  const p95 = m.p95LatencyMs === null ? "n/a" : `${(m.p95LatencyMs / 1000).toFixed(2)} s`;
+  console.log(`\nShadow model ${name}: ${m.timed} timed calls, ${m.errors} errors, p95 decision time ${p95}.`);
+  if (m.firstError) console.log(`  first error: ${m.firstError}`);
+}
+
+const positive = (value: string | undefined, flag: string): number | undefined => {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) throw new UsageError(`${flag} must be a positive whole number`);
+  return n;
+};
+
+interface BacktestOptions {
+  store: Store;
+  inventory: Vehicle[];
+  gate?: string;
+  json: boolean;
+  model?: string;
+  effort?: string;
+  threads?: string;
+  concurrency?: string;
+}
+
+async function cmdBacktest(dir: string, opts: BacktestOptions): Promise<number> {
+  const loaded = loadBacktestDir(dir);
+  const fixtures = loaded.fixtures;
+  const limit = positive(opts.threads, "--threads");
+  const threads: Thread[] = limit ? loaded.threads.slice(0, limit) : loaded.threads;
+  const model = opts.model ? await realModel(opts.model, opts.effort) : routineModel();
+  if (!opts.model && opts.effort !== undefined) throw new UsageError("--effort needs --model");
+  const concurrency = positive(opts.concurrency, "--concurrency") ?? (opts.model ? 4 : threads.length);
+  const points = (await mapLimit(threads, concurrency, (t) => backtestThread(t, model, opts.store, opts.inventory))).flat();
   const fixtureVehicle = opts.inventory.find((v) => v.status === "available");
   if (!fixtureVehicle) throw new UsageError("fixtures need one available vehicle in the inventory");
   const report = summarize(threads.length, points, await runFixtures(fixtures, model, opts.store, fixtureVehicle));
@@ -139,7 +217,10 @@ async function cmdBacktest(dir: string, opts: { store: Store; inventory: Vehicle
     const { points: _p, scored: _s, tags, ...rest } = report;
     const tagCounts = Object.fromEntries(Object.entries(tags).map(([k, v]) => [k, v.length]));
     console.log(JSON.stringify({ ...rest, points: report.points.length, scored: report.scored.length, tags: tagCounts }, null, 2));
-  } else printReport(report);
+  } else {
+    printReport(report);
+    printModelCalls(model.name, report.modelCalls);
+  }
   if (opts.gate) {
     mkdirSync(opts.gate, { recursive: true });
     const lastAt = points.reduce((m, p) => (p.at > m ? p.at : m), "");
@@ -147,6 +228,10 @@ async function cmdBacktest(dir: string, opts: { store: Store; inventory: Vehicle
     writeFileSync(join(opts.gate, "shadow.jsonl"), shadow.map((l) => JSON.stringify(l)).join("\n") + "\n");
     writeFileSync(join(opts.gate, "labels.jsonl"), labels.map((l) => JSON.stringify(l)).join("\n") + "\n");
     if (!opts.json) console.log(`\nWrote ${shadow.length} agent decisions and ${labels.length} human labels to ${opts.gate}/ in autonomy-gate's format.`);
+  }
+  if (report.modelCalls.timed > 0 && report.modelCalls.errors === report.modelCalls.timed) {
+    console.error(`showroom: every call to ${model.name} failed; first error: ${report.modelCalls.firstError}`);
+    return 1;
   }
   return report.fixtures.every((f) => f.passed) ? 0 : 1;
 }
@@ -183,6 +268,10 @@ export async function main(argv: string[]): Promise<number> {
       provider: { type: "string" },
       live: { type: "boolean", default: false },
       now: { type: "string" },
+      model: { type: "string" },
+      effort: { type: "string" },
+      threads: { type: "string" },
+      concurrency: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -191,11 +280,17 @@ export async function main(argv: string[]): Promise<number> {
     console.log(USAGE);
     return v.help ? 0 : 2;
   }
+  if (cmd !== "backtest" && (v.model || v.effort || v.threads || v.concurrency)) {
+    throw new UsageError("--model, --effort, --threads and --concurrency belong to backtest: a real model runs only in shadow, never toward an outbox");
+  }
   const store = loadStore(v.store as string);
   const inventory = loadInventory(v.inventory as string);
   const json = Boolean(v.json);
   if (cmd === "run" && arg) return cmdRun(arg, { store, inventory, json, ...(v.queue ? { queue: v.queue } : {}) });
-  if (cmd === "backtest" && arg) return cmdBacktest(arg, { store, inventory, json, ...(v.gate ? { gate: v.gate } : {}) });
+  if (cmd === "backtest" && arg) {
+    const extra = Object.fromEntries((["gate", "model", "effort", "threads", "concurrency"] as const).flatMap((k) => (typeof v[k] === "string" ? [[k, v[k]]] : [])));
+    return cmdBacktest(arg, { store, inventory, json, ...extra });
+  }
   if (cmd === "send" && arg) return cmdSend(arg, v, store);
   if (cmd === "switch" && arg && (extra === "on" || extra === "off")) {
     writeFileSync(arg, extra === "on" ? "on\n" : "stop\n");

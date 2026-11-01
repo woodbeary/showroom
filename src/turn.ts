@@ -35,6 +35,7 @@ export interface TurnResult {
   reading: Reading;
   model: string | null;
   proposal: Proposal | null;
+  latencyMs: number | null;
   holds: Hold[];
   handoff: Handoff | null;
 }
@@ -46,6 +47,7 @@ export interface TurnInput {
   store: Store;
   inventory: readonly Vehicle[];
   model: Model;
+  clock?: () => number;
 }
 
 export const HANDOFF_COPY = "Good question. I'm getting you the right person for it, and they'll text you from this number.";
@@ -107,6 +109,7 @@ export async function turn(input: TurnInput): Promise<{ result: TurnResult; lead
     reading,
     model: null as string | null,
     proposal: null as Proposal | null,
+    latencyMs: null as number | null,
     holds: [] as Hold[],
   };
 
@@ -151,6 +154,9 @@ export async function turn(input: TurnInput): Promise<{ result: TurnResult; lead
   }
 
   const vehicle = lookupVehicle(input.inventory, lead.stock);
+  const clock = input.clock ?? (() => performance.now());
+  const started = clock();
+  const elapsed = () => (model.timed ? clock() - started : null);
   let proposal: Proposal;
   try {
     const request = checkRequest({
@@ -165,9 +171,9 @@ export async function turn(input: TurnInput): Promise<{ result: TurnResult; lead
     });
     proposal = checkProposal(await model.propose(request));
   } catch (error) {
-    return handOff({ desk: "salesperson", reason: `model_error: ${(error as Error).message}`, by: "model_error" }, { model: model.name });
+    return handOff({ desk: "salesperson", reason: `model_error: ${(error as Error).message}`, by: "model_error" }, { model: model.name, latencyMs: elapsed() });
   }
-  const seen = { model: model.name, proposal };
+  const seen = { model: model.name, proposal, latencyMs: elapsed() };
 
   if (proposal.next === "handed_off") {
     return handOff({ desk: proposal.desk ?? "salesperson", reason: proposal.reason ?? "model_handoff", by: "model" }, seen);

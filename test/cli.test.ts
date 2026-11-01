@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -49,6 +49,53 @@ test("a STOP after the 9:52 pm reply was queued: the 8:00 am cycle holds the rep
   assert.equal(sent.status, 0, sent.stderr);
   assert.match(sent.stdout, /held +stop_honored: the customer opted out/);
   assert.equal(existsSync(provider), false);
+});
+
+test("the stand-in is the default: no model call is timed and the gate export carries no latency or error", () => {
+  const out = showroom("backtest", "examples/transcripts", "--gate", join(dir, "gate-default"));
+  assert.equal(out.status, 0, out.stderr);
+  assert.doesNotMatch(out.stdout, /Shadow model/);
+  const shadow = readFileSync(join(dir, "gate-default", "shadow.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(shadow.length, 464);
+  assert.ok(shadow.every((s) => s.latency_s === null && s.error === null));
+});
+
+const offline = (): NodeJS.ProcessEnv => {
+  const { ANTHROPIC_API_KEY: _a, ANTHROPIC_AUTH_TOKEN: _t, ANTHROPIC_PROFILE: _p, OPENAI_API_KEY: _o, OPENAI_ADMIN_KEY: _oa, ...env } = process.env;
+  const home = join(dir, "empty-home");
+  mkdirSync(home, { recursive: true });
+  return { ...env, HOME: home, ANTHROPIC_BASE_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9" };
+};
+
+const offlineShowroom = (...args: string[]) => spawnSync(process.execPath, [join(ROOT, "src", "cli.ts"), ...args], { encoding: "utf8", cwd: ROOT, env: offline() });
+
+test("a real model runs only in backtest, in shadow, and says what it needs", () => {
+  const run = offlineShowroom("run", "examples/lead-0952pm.json", "--model", "claude");
+  assert.equal(run.status, 2);
+  assert.match(run.stderr, /a real model runs only in shadow, never toward an outbox/);
+  const send = offlineShowroom("send", join(dir, "none.jsonl"), "--ledger", join(dir, "l"), "--switch", join(dir, "s"), "--model", "claude");
+  assert.equal(send.status, 2);
+  const noId = offlineShowroom("backtest", "examples/transcripts", "--model", "openai");
+  assert.equal(noId.status, 2);
+  assert.match(noId.stderr, /must name the model; there is no default/);
+  const noKey = offlineShowroom("backtest", "examples/transcripts", "--model", "openai:test-model");
+  assert.equal(noKey.status, 2);
+  assert.match(noKey.stderr, /needs OPENAI_API_KEY/);
+  const effort = offlineShowroom("backtest", "examples/transcripts", "--model", "claude", "--effort", "extreme");
+  assert.equal(effort.status, 2);
+  assert.match(effort.stderr, /--effort must be one of low, medium, high, xhigh, max/);
+});
+
+test("a shadow run where every model call fails says so and exits 1, without leaving the machine", () => {
+  const out = offlineShowroom("backtest", "examples/transcripts", "--model", "claude", "--threads", "1", "--concurrency", "1", "--gate", join(dir, "gate-failed"));
+  assert.equal(out.status, 1);
+  assert.match(out.stdout, /Shadow model claude:claude-opus-5-5: 2 timed calls, 2 errors, p95 decision time/);
+  assert.match(out.stderr, /every call to claude:claude-opus-5-5 failed; first error: model_error: /);
+  const shadow = readFileSync(join(dir, "gate-failed", "shadow.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const timed = shadow.filter((s) => s.latency_s !== null);
+  assert.equal(timed.length, 2);
+  assert.ok(timed.every((s) => typeof s.latency_s === "number" && /^model_error: /.test(s.error)));
+  assert.ok(shadow.filter((s) => s.latency_s === null).every((s) => s.error === null));
 });
 
 test("bad input exits 2 with a message", () => {

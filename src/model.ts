@@ -33,6 +33,7 @@ export interface Proposal {
 
 export interface Model {
   readonly name: string;
+  readonly timed?: boolean;
   propose(request: ModelRequest): Promise<Proposal>;
 }
 

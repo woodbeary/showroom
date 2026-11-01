@@ -116,7 +116,7 @@ export function validateThread(t: Thread, where: string): Thread {
   return t;
 }
 
-export async function backtestThread(thread: Thread, model: Model, store: Store, inventory: readonly Vehicle[]): Promise<Point[]> {
+export async function backtestThread(thread: Thread, model: Model, store: Store, inventory: readonly Vehicle[], clock?: () => number): Promise<Point[]> {
   const points: Point[] = [];
   let lead: Lead = { id: thread.leadId, state: "new", thread: [], offeredSlots: [], ...(thread.stock ? { stock: thread.stock } : {}) };
   for (let i = 0; i < thread.events.length; i++) {
@@ -126,7 +126,7 @@ export async function backtestThread(thread: Thread, model: Model, store: Store,
       continue;
     }
     const text = e.text ?? "";
-    const { result } = await turn({ lead, text, decidedAt: e.at, store, inventory, model });
+    const { result } = await turn({ lead, text, decidedAt: e.at, store, inventory, model, ...(clock ? { clock } : {}) });
     const owned = lead.state === "handed_off" || lead.state === "opted_out";
     const outcome: Outcome = owned ? { unscored: "person_owned" } : labelAt(thread, i);
     const label = "label" in outcome ? outcome.label : null;
@@ -220,6 +220,30 @@ export function routing(scored: readonly Point[]): Routing {
   };
 }
 
+export interface ModelCalls {
+  timed: number;
+  errors: number;
+  firstError: string | null;
+  p95LatencyMs: number | null;
+}
+
+export function p95(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.ceil(0.95 * sorted.length) - 1] ?? null;
+}
+
+export function modelCalls(points: readonly Point[]): ModelCalls {
+  const timed = points.filter((p) => p.result.latencyMs !== null);
+  const errors = timed.filter((p) => p.result.handoff?.by === "model_error");
+  return {
+    timed: timed.length,
+    errors: errors.length,
+    firstError: errors[0]?.result.handoff?.reason ?? null,
+    p95LatencyMs: p95(timed.map((p) => p.result.latencyMs as number)),
+  };
+}
+
 export interface Report {
   threads: number;
   points: Point[];
@@ -229,6 +253,7 @@ export interface Report {
   byState: { state: State; n: number; agree: number; tags: Partial<Record<Tag, number>> }[];
   tags: Partial<Record<Tag, Point[]>>;
   routing: Routing;
+  modelCalls: ModelCalls;
   held: number;
   fixtures: FixtureResult[];
 }
@@ -250,7 +275,7 @@ export function summarize(threads: number, points: Point[], fixtures: FixtureRes
     return { state, n: here.length, agree: here.filter((p) => !p.tag).length, tags: t };
   }).filter((r) => r.n > 0);
   const held = points.filter((p) => p.result.holds.length > 0).length;
-  return { threads, points, scored, unscored, confusion, byState, tags, routing: routing(scored), held, fixtures };
+  return { threads, points, scored, unscored, confusion, byState, tags, routing: routing(scored), modelCalls: modelCalls(points), held, fixtures };
 }
 
 export function loadBacktestDir(dir: string): { threads: Thread[]; fixtures: Fixture[] } {
@@ -279,8 +304,8 @@ export function gateExport(points: readonly Point[], fingerprint: string, logged
     reason: p.result.handoff?.reason ?? p.result.reading.kind,
     confidence: null,
     model: { action: GATE_ACTION[p.predicted], path: p.result.path },
-    latency_s: null,
-    error: null,
+    latency_s: p.result.latencyMs === null ? null : p.result.latencyMs / 1000,
+    error: p.result.handoff?.by === "model_error" ? p.result.handoff.reason : null,
     fingerprint,
     loggedAt,
   }));
