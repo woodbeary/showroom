@@ -172,11 +172,11 @@ first one: "Can I have your number?" must read as an ask and go to a salesperson
 rule back (add `have` to the second `NOT_YET` pattern in `src/intent.ts` and drop
 `CONTACT_REQUEST` from `TRIGGERS`) and it reads as "maybe later" and fails;
 `test/intent.test.ts` does exactly that to prove the fixture catches it. Thirteen more came from
-probing v0.1.0 on 2026-11-01. Twelve are opt-outs it read as ordinary messages: "revoke" and
-"opt out" (both named in 47 CFR 64.1200(a)(10)), the carrier keyword OPTOUT, STOP with a
-courtesy word, and possible opt-outs such as "wrong number" and "lose my number". The test runs
-each against v0.1.0's rules to show it failing there. The thirteenth, "Don't lose my number",
-must stay an ordinary message.
+probing the inbound rules on 2026-11-01. Twelve are opt-outs the rules as first written read as
+ordinary messages: "revoke" and "opt out" (both named in 47 CFR 64.1200(a)(10)), the carrier
+keyword OPTOUT, STOP with a courtesy word, and possible opt-outs such as "wrong number" and "lose
+my number". The test runs each against those first rules to show it failing there. The
+thirteenth, "Don't lose my number", must stay an ordinary message.
 
 **4. The holdout readout.**
 

@@ -39,18 +39,18 @@ test("the 'have your number' fixture catches the rule it was written for", () =>
   assert.equal(meets(f, RULES), true);
 });
 
-const V010_STOP: readonly RegExp[] = [
+const FIRST_STOP: readonly RegExp[] = [
   /^\s*(?:stop|stop all|stopall|unsubscribe|end|quit|cancel)\s*[.!]*\s*$/i,
   /\b(?:do not|don['’]?t|dont|stop)\s+(?:text|texting|message|messaging|contact|contacting)\s+me\b/i,
   /\b(?:leave me alone|remove me from|take me off)\b/i,
 ];
 
-test("each opt-out fixture from the Nov 1 probe fails under v0.1.0's rules and holds under today's", () => {
-  const before: Rules = { ...RULES, stop: V010_STOP, possibleStop: [] };
+test("each opt-out fixture from the Nov 1 probe fails under the rules as first written and holds under today's", () => {
+  const before: Rules = { ...RULES, stop: FIRST_STOP, possibleStop: [] };
   const probe = fixtures.filter((f) => f.origin.startsWith("2026-11-01") && (f.expect.kind === "stop" || f.expect.kind === "possible_stop"));
   assert.equal(probe.length, 12);
   for (const f of probe) {
-    assert.equal(meets(f, before), false, `${f.id} already read right under v0.1.0`);
+    assert.equal(meets(f, before), false, `${f.id} already read right under the first rules`);
     assert.equal(meets(f, RULES), true, `${f.id}: ${JSON.stringify(readInbound(f.text))}`);
   }
 });
